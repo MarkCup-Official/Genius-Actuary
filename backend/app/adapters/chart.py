@@ -17,3 +17,8 @@ class MockChartAdapter:
             notes="Mock chart artifact for frontend integration.",
         )
         return [chart]
+
+
+class DisabledChartAdapter:
+    def build_preview(self, session: AnalysisSession) -> list[ChartArtifact]:
+        return []

@@ -98,18 +98,40 @@ class MajorConclusionItem(BaseModel):
     confidence: float = 0.5
 
 
+class AnalysisLoopPlan(BaseModel):
+    clarification_questions: list[ClarificationQuestion] = Field(default_factory=list)
+    search_tasks: list[SearchTask] = Field(default_factory=list)
+    major_conclusions: list[MajorConclusionItem] = Field(default_factory=list)
+    ready_for_report: bool = False
+    reasoning_focus: str = ""
+    stop_reason: str = ""
+
+
 class AnalysisReport(BaseModel):
     summary: str
     assumptions: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
     chart_refs: list[str] = Field(default_factory=list)
+    markdown: str = ""
 
 
 class SessionEvent(BaseModel):
     timestamp: datetime = Field(default_factory=utcnow)
     kind: str
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditLogEntry(BaseModel):
+    log_id: str = Field(default_factory=lambda: str(uuid4()))
+    action: str
+    actor: str
+    target: str
+    ip_address: str
+    created_at: datetime = Field(default_factory=utcnow)
+    status: str = "success"
+    summary: str
+    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class AnalysisSession(BaseModel):
@@ -126,6 +148,16 @@ class AnalysisSession(BaseModel):
     chart_artifacts: list[ChartArtifact] = Field(default_factory=list)
     major_conclusions: list[MajorConclusionItem] = Field(default_factory=list)
     report: AnalysisReport | None = None
+    analysis_rounds_completed: int = 0
+    follow_up_round_limit: int = 10
+    follow_up_rounds_used: int = 0
+    follow_up_extensions_used: int = 0
+    follow_up_budget_exhausted: bool = False
+    deferred_follow_up_question_count: int = 0
+    activity_status: str = "idle"
+    current_focus: str = ""
+    last_stop_reason: str = ""
+    error_message: str | None = None
     events: list[SessionEvent] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

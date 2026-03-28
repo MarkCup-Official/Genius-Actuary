@@ -4,9 +4,7 @@ import {
   ClipboardPenLine,
   FileStack,
   LayoutDashboard,
-  Logs,
   Settings,
-  ShieldCheck,
   UserRound,
   Workflow,
 } from 'lucide-react'
@@ -20,11 +18,9 @@ const navItems = [
   { to: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
   { to: '/analysis/modes', key: 'analyze', icon: ClipboardPenLine },
   { to: '/notifications', key: 'notifications', icon: Bell },
-  { to: '/logs', key: 'logs', icon: Logs },
   { to: '/files', key: 'files', icon: FileStack },
   { to: '/dataviz', key: 'dataviz', icon: ChartColumnIncreasing },
   { to: '/resources/analyses', key: 'resources', icon: Workflow },
-  { to: '/admin/roles', key: 'admin', icon: ShieldCheck },
   { to: '/settings', key: 'settings', icon: Settings },
   { to: '/profile', key: 'profile', icon: UserRound },
 ] as const

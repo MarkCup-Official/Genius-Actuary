@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
-import { Download } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/table-core'
+import { Download, TriangleAlert } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
@@ -9,19 +10,31 @@ import { Card } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
 import { exportToCsv } from '@/lib/export/csv'
-import { formatDateTime } from '@/lib/utils/format'
 import { useAppStore } from '@/lib/store/app-store'
+import { formatDateTime } from '@/lib/utils/format'
 import type { AnalysisSessionSummary } from '@/types'
 
 export function ProfilePage() {
   const { i18n, t } = useTranslation()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const adapter = useApiAdapter()
   const locale = useAppStore((state) => state.locale)
+  const clearSession = useAppStore((state) => state.clearSession)
   const isZh = i18n.language.startsWith('zh')
 
   const profileQuery = useQuery({
     queryKey: ['profile'],
     queryFn: adapter.profile.get,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => adapter.auth.deletePersonalData(),
+    onSuccess: async () => {
+      clearSession()
+      queryClient.clear()
+      await navigate('/login', { replace: true })
+    },
   })
 
   const profile = profileQuery.data
@@ -38,10 +51,18 @@ export function ProfilePage() {
     roles: isZh ? '角色' : 'Roles',
     lastActive: isZh ? '最近活跃' : 'Last active',
     preferencesTitle: isZh ? '偏好快照' : 'Preference snapshot',
-    preferencesDescription:
-      isZh
-        ? '这里展示的是整个工作台当前正在使用的持久化偏好设置。'
-        : 'Profile export reflects the same persisted settings used across the entire workspace shell.',
+    preferencesDescription: isZh
+      ? '这里显示的是整个工作台当前正在使用的持久化偏好设置。'
+      : 'Profile export reflects the same persisted settings used across the entire workspace shell.',
+    dangerTitle: isZh ? '危险操作' : 'Danger zone',
+    dangerDescription: isZh
+      ? '执行后会同时清除当前浏览器 cookie，并删除该 cookie 归属下的全部个人会话与相关数据。'
+      : 'This clears the current browser cookie and permanently removes all personal sessions and related data tied to it.',
+    clearData: isZh ? '清除 cookie 并删除个人数据' : 'Clear cookie and delete personal data',
+    clearDataPending: isZh ? '正在清除 cookie 和数据...' : 'Clearing cookie and data...',
+    clearDataConfirm: isZh
+      ? '确认清除当前 cookie，并删除该身份下的个人资料、会话历史和相关数据吗？此操作不可撤销。'
+      : 'Are you sure you want to clear the current cookie and delete the profile, session history, and related data tied to it? This cannot be undone.',
   }
 
   const preferenceLabel: Record<string, string> = {
@@ -84,7 +105,10 @@ export function ProfilePage() {
           <Button
             variant="secondary"
             onClick={() => {
-              if (!profile) return
+              if (!profile) {
+                return
+              }
+
               void exportToCsv({
                 title: 'profile-history',
                 headers: [text.problem, text.mode, text.status, text.updated],
@@ -112,18 +136,10 @@ export function ProfilePage() {
               </div>
               <p className="text-sm leading-6 text-text-secondary">{profile.bio}</p>
               <div className="grid gap-2 text-sm text-text-secondary">
-                <p>
-                  {text.email}: {profile.email}
-                </p>
-                <p>
-                  {text.timezone}: {profile.timezone}
-                </p>
-                <p>
-                  {text.roles}: {profile.roles.join(', ')}
-                </p>
-                <p>
-                  {text.lastActive}: {formatDateTime(profile.lastActiveAt, locale)}
-                </p>
+                <p>{text.email}: {profile.email}</p>
+                <p>{text.timezone}: {profile.timezone}</p>
+                <p>{text.roles}: {profile.roles.join(', ')}</p>
+                <p>{text.lastActive}: {formatDateTime(profile.lastActiveAt, locale)}</p>
               </div>
             </Card>
 
@@ -136,15 +152,47 @@ export function ProfilePage() {
               <div className="grid gap-3 md:grid-cols-2">
                 {Object.entries(profile.preferences).map(([key, value]) => (
                   <div key={key} className="rounded-[20px] border border-border-subtle bg-app-bg-elevated p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-text-muted">
-                      {preferenceLabel[key] ?? key}
-                    </p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-text-muted">{preferenceLabel[key] ?? key}</p>
                     <p className="mt-2 text-sm font-medium text-text-primary">{String(value)}</p>
                   </div>
                 ))}
               </div>
             </Card>
           </div>
+
+          <Card className="space-y-4 border-[rgba(197,109,99,0.35)] p-6">
+            <div className="flex items-start gap-4">
+              <div className="rounded-full border border-[rgba(197,109,99,0.35)] bg-[rgba(197,109,99,0.12)] p-3 text-[#f7d4cf]">
+                <TriangleAlert className="size-5" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-lg font-semibold text-text-primary">{text.dangerTitle}</h2>
+                <p className="text-sm leading-7 text-text-secondary">{text.dangerDescription}</p>
+              </div>
+            </div>
+
+            {deleteMutation.isError ? (
+              <p className="rounded-2xl border border-[rgba(197,109,99,0.4)] bg-[rgba(197,109,99,0.12)] px-4 py-3 text-sm text-[#f7d4cf]">
+                {(deleteMutation.error as Error).message}
+              </p>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button
+                variant="danger"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  if (!window.confirm(text.clearDataConfirm)) {
+                    return
+                  }
+
+                  void deleteMutation.mutateAsync()
+                }}
+              >
+                {deleteMutation.isPending ? text.clearDataPending : text.clearData}
+              </Button>
+            </div>
+          </Card>
 
           <DataTable
             data={profile.history.map((item) => ({

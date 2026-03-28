@@ -1,4 +1,5 @@
 import { useAppStore } from '@/lib/store/app-store'
+import { getDebugAuthHeader } from '@/lib/debug-auth'
 import { endpoints } from '@/lib/api/endpoints'
 import type { AuthTokens } from '@/types'
 
@@ -21,12 +22,14 @@ export class ApiClient {
   private withCredentials: boolean
   private apiKey?: string
   private apiKeyHeader: string
+  private timeoutMs: number
 
   constructor(baseUrl = import.meta.env['VITE_API_BASE_URL'] ?? '') {
     this.baseUrl = baseUrl
     this.withCredentials = (import.meta.env['VITE_API_WITH_CREDENTIALS'] ?? 'true') !== 'false'
     this.apiKey = import.meta.env['VITE_API_KEY'] || undefined
     this.apiKeyHeader = import.meta.env['VITE_API_KEY_HEADER'] ?? 'X-API-Key'
+    this.timeoutMs = Number(import.meta.env['VITE_API_TIMEOUT_MS'] ?? 30000)
   }
 
   private async refreshAccessToken(refreshToken: string) {
@@ -55,6 +58,19 @@ export class ApiClient {
   async request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
     const { accessToken, refreshToken, clearSession } = useAppStore.getState()
     const headers = new Headers(init.headers)
+    const controller = new AbortController()
+    const externalSignal = init.signal
+    const timeoutId = window.setTimeout(() => controller.abort(), this.timeoutMs)
+    const isDebugPath = path.startsWith('/api/debug/')
+    const debugAuthHeader = isDebugPath ? getDebugAuthHeader() : null
+
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort()
+      } else {
+        externalSignal.addEventListener('abort', () => controller.abort(), { once: true })
+      }
+    }
 
     if (!headers.has('Content-Type') && !(init.body instanceof FormData)) {
       headers.set('Content-Type', 'application/json')
@@ -64,15 +80,31 @@ export class ApiClient {
       headers.set(this.apiKeyHeader, this.apiKey)
     }
 
-    if (accessToken && !accessToken.startsWith(COOKIE_SESSION_PREFIX)) {
+    if (debugAuthHeader && !headers.has('Authorization')) {
+      headers.set('Authorization', debugAuthHeader)
+    } else if (accessToken && !accessToken.startsWith(COOKIE_SESSION_PREFIX)) {
       headers.set('Authorization', `Bearer ${accessToken}`)
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers,
-      credentials: init.credentials ?? (this.withCredentials ? 'include' : 'same-origin'),
-    })
+    let response: Response
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        headers,
+        credentials: init.credentials ?? (this.withCredentials ? 'include' : 'same-origin'),
+        signal: controller.signal,
+      })
+    } catch (error) {
+      window.clearTimeout(timeoutId)
+
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new ApiError(`Request timed out for ${path}`, 408)
+      }
+
+      throw error
+    }
+
+    window.clearTimeout(timeoutId)
 
     if (
       response.status === 401 &&

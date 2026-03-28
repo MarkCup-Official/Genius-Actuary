@@ -3,6 +3,7 @@ import type {
   AnalysisProgress,
   AnalysisReport,
   AnalysisSession,
+  AuditLogEntry,
   ChartArtifact,
   ClarificationQuestion,
   ModeDefinition,
@@ -13,7 +14,6 @@ import type {
 import { i18n } from '@/lib/i18n'
 
 export const COOKIE_SESSION_TOKEN = 'backend-cookie-session'
-const BACKEND_SESSION_INDEX_KEY = 'genius-actuary-rest-session-index'
 
 export interface BackendBootstrapResponse {
   app_name: string
@@ -127,6 +127,16 @@ export interface BackendSession {
   chart_artifacts: BackendChartArtifact[]
   major_conclusions: BackendMajorConclusionItem[]
   report: BackendReport | null
+  analysis_rounds_completed: number
+  follow_up_round_limit: number
+  follow_up_rounds_used: number
+  follow_up_extensions_used: number
+  follow_up_budget_exhausted: boolean
+  deferred_follow_up_question_count: number
+  activity_status: string
+  current_focus: string
+  last_stop_reason: string
+  error_message?: string | null
   events: BackendSessionEvent[]
   created_at: string
   updated_at: string
@@ -137,6 +147,11 @@ export interface BackendSessionStepResponse {
   status: BackendSession['status']
   next_action: 'ask_user' | 'run_mcp' | 'preview_report' | 'complete'
   prompt_to_user: string
+  analysis_rounds_completed?: number
+  activity_status?: string
+  current_focus?: string
+  last_stop_reason?: string
+  error_message?: string | null
   pending_questions: BackendClarificationQuestion[]
   pending_search_tasks: BackendSearchTask[]
   evidence_items: BackendEvidenceItem[]
@@ -144,43 +159,75 @@ export interface BackendSessionStepResponse {
   report_preview: BackendReport | null
 }
 
-function isBrowser() {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+export interface BackendRequestMoreFollowUpResponse {
+  session: BackendSession
+  step: BackendSessionStepResponse
+}
+
+export interface BackendPersonalDataDeletionResponse {
+  deleted_session_count: number
+}
+
+export interface BackendAuditLogEntry {
+  log_id: string
+  action: string
+  actor: string
+  target: string
+  ip_address: string
+  created_at: string
+  status: 'success' | 'warning' | 'error'
+  summary: string
+  metadata: Record<string, string>
+}
+
+export interface BackendAuditLogListResponse {
+  logs: BackendAuditLogEntry[]
+}
+
+export interface BackendDebugAuthStatusResponse {
+  username: string
+  role: string
+}
+
+export interface BackendDebugSessionSummary {
+  session_id: string
+  owner_client_id: string
+  mode: BackendSession['mode']
+  problem_statement: string
+  status: BackendSession['status']
+  event_count: number
+  answer_count: number
+  evidence_count: number
+  search_task_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendDebugSessionListResponse {
+  sessions: BackendDebugSessionSummary[]
+}
+
+export interface DebugSessionSummary {
+  id: string
+  ownerClientId: string
+  mode: BackendSession['mode']
+  problemStatement: string
+  status: BackendSession['status']
+  eventCount: number
+  answerCount: number
+  evidenceCount: number
+  searchTaskCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DebugSessionDetail {
+  summary: DebugSessionSummary
+  session: BackendSession
 }
 
 function isChineseLocale() {
   return i18n.language.startsWith('zh')
-}
-
-function loadTrackedSessionIds() {
-  if (!isBrowser()) {
-    return [] as string[]
-  }
-
-  try {
-    const raw = window.localStorage.getItem(BACKEND_SESSION_INDEX_KEY)
-    const parsed = raw ? (JSON.parse(raw) as unknown) : []
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function persistTrackedSessionIds(sessionIds: string[]) {
-  if (!isBrowser()) {
-    return
-  }
-
-  window.localStorage.setItem(BACKEND_SESSION_INDEX_KEY, JSON.stringify(sessionIds))
-}
-
-export function rememberTrackedSession(sessionId: string) {
-  const next = Array.from(new Set([sessionId, ...loadTrackedSessionIds()]))
-  persistTrackedSessionIds(next)
-}
-
-export function getTrackedSessionIds() {
-  return loadTrackedSessionIds()
 }
 
 export function createBackendPseudoUser(): User {
@@ -250,10 +297,11 @@ export function mapBackendQuestion(question: BackendClarificationQuestion): Clar
       value: option,
       label: option,
     })),
-    allowCustomInput: question.allow_custom_input,
+    allowCustomInput: true,
     allowSkip: question.allow_skip,
     priority: question.priority,
     recommended: [],
+    answered: question.answered,
   }
 }
 
@@ -341,6 +389,12 @@ export function mapBackendSession(session: BackendSession): AnalysisSession {
     status: session.status,
     createdAt: session.created_at,
     updatedAt: session.updated_at,
+    errorMessage: session.error_message ?? undefined,
+    followUpRoundLimit: session.follow_up_round_limit,
+    followUpRoundsUsed: session.follow_up_rounds_used,
+    followUpExtensionsUsed: session.follow_up_extensions_used,
+    followUpBudgetExhausted: session.follow_up_budget_exhausted,
+    deferredFollowUpQuestionCount: session.deferred_follow_up_question_count,
     lastInsight: mapLastInsight(session),
     questions: session.clarification_questions.map((question) => ({
       ...mapBackendQuestion(question),
@@ -548,6 +602,7 @@ export function mapBackendProgress(session: BackendSession, step?: BackendSessio
     status: step?.status ?? session.status,
     overallProgress: Math.round((cursor / stages.length) * 100),
     currentStepLabel: step?.prompt_to_user ?? mapLastInsight(session),
+    errorMessage: step?.error_message ?? session.error_message ?? undefined,
     stages: stages.map((stage, index) => ({
       ...stage,
       status:
@@ -559,6 +614,36 @@ export function mapBackendProgress(session: BackendSession, step?: BackendSessio
               : 'active'
             : 'pending',
     })),
+  }
+}
+
+export function mapDebugSessionSummary(session: BackendDebugSessionSummary): DebugSessionSummary {
+  return {
+    id: session.session_id,
+    ownerClientId: session.owner_client_id,
+    mode: session.mode,
+    problemStatement: session.problem_statement,
+    status: session.status,
+    eventCount: session.event_count,
+    answerCount: session.answer_count,
+    evidenceCount: session.evidence_count,
+    searchTaskCount: session.search_task_count,
+    createdAt: session.created_at,
+    updatedAt: session.updated_at,
+  }
+}
+
+export function mapAuditLogEntry(entry: BackendAuditLogEntry): AuditLogEntry {
+  return {
+    id: entry.log_id,
+    action: entry.action,
+    actor: entry.actor,
+    target: entry.target,
+    ipAddress: entry.ip_address,
+    createdAt: entry.created_at,
+    status: entry.status,
+    summary: entry.summary,
+    metadata: entry.metadata,
   }
 }
 

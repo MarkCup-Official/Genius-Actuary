@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Download, FileText } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
 import { ChartCard } from '@/components/charts/chart-card'
+import { serializeChartRows } from '@/components/charts/option-factories'
 import { PageHeader } from '@/components/layout/page-header'
 import { ReportMarkdown } from '@/components/markdown/report-markdown'
 import { Badge } from '@/components/ui/badge'
@@ -12,7 +13,6 @@ import { Card } from '@/components/ui/card'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
 import { exportToCsv } from '@/lib/export/csv'
 import { exportToPdf } from '@/lib/export/pdf'
-import { serializeChartRows } from '@/components/charts/option-factories'
 
 export function ReportPage() {
   const { i18n, t } = useTranslation()
@@ -32,12 +32,31 @@ export function ReportPage() {
   })
 
   const report = reportQuery.data
+  const session = sessionQuery.data
+  const pendingQuestions = session?.questions.filter((question) => !question.answered) ?? []
+
+  const requestMoreFollowUpMutation = useMutation({
+    mutationFn: () => adapter.analysis.requestMoreFollowUp(sessionId),
+    onSuccess: (updatedSession) => {
+      if (updatedSession.status === 'CLARIFYING') {
+        void navigate(`/analysis/session/${sessionId}/clarify`)
+        return
+      }
+
+      void navigate(`/analysis/session/${sessionId}/progress`)
+    },
+  })
+
+  const failedMessage =
+    session?.status === 'FAILED'
+      ? session.errorMessage ?? (isZh ? '报告生成失败，请检查模型配置后重试。' : 'Report generation failed after all retries.')
+      : null
 
   const localizeHighlight = (highlight: { id: string; label: string; detail: string; value: string }) => {
     const highlightMap: Record<string, { label: string; detail: string }> = {
       'backend-status': {
         label: isZh ? '后端状态' : 'Backend status',
-        detail: isZh ? '这里显示真实 FastAPI 编排器返回的当前状态。' : 'This card reflects the real FastAPI orchestrator state.',
+        detail: isZh ? '这里显示 FastAPI 编排器返回的真实当前状态。' : 'This card reflects the real FastAPI orchestrator state.',
       },
       'answers-count': {
         label: isZh ? '已记录回答' : 'Answers captured',
@@ -100,8 +119,69 @@ export function ReportPage() {
         }
       />
 
-      {report ? (
+      {failedMessage ? (
+        <Card className="space-y-4 border-[rgba(197,109,99,0.35)] bg-[rgba(197,109,99,0.08)] p-6">
+          <h2 className="text-lg font-semibold text-[#f7d4cf]">
+            {isZh ? '报告生成失败' : 'Report generation failed'}
+          </h2>
+          <p className="text-sm leading-7 text-[#f1cbc6]">{failedMessage}</p>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={() => void navigate(`/analysis/session/${sessionId}/progress`)}>
+              {isZh ? '返回进度页' : 'Back to progress'}
+            </Button>
+            <Button variant="ghost" onClick={() => void navigate(`/analysis/session/${sessionId}/clarify`)}>
+              {isZh ? '返回澄清页' : 'Back to clarification'}
+            </Button>
+          </div>
+        </Card>
+      ) : report ? (
         <>
+          {pendingQuestions.length ? (
+            <Card className="space-y-4 border-border-strong bg-app-bg-elevated p-6">
+              <div className="space-y-2">
+                <h2 className="text-lg font-semibold text-text-primary">
+                  {isZh ? '有新的追问等待回答' : 'New follow-up questions are waiting'}
+                </h2>
+                <p className="text-sm leading-7 text-text-secondary">
+                  {isZh
+                    ? '分析过程中产生的新问题应该直接在问答页回答，不需要先在结果页停留。'
+                    : 'Questions raised during analysis should be answered directly in the clarification flow, not postponed here.'}
+                </p>
+              </div>
+              <Button onClick={() => void navigate(`/analysis/session/${sessionId}/clarify`)}>
+                {isZh ? '立即继续回答' : 'Answer now'}
+              </Button>
+            </Card>
+          ) : null}
+
+          {session?.followUpBudgetExhausted ? (
+            <Card className="space-y-4 border-border-strong bg-app-bg-elevated p-6">
+              <div className="space-y-2">
+                <h2 className="text-lg font-semibold text-text-primary">
+                  {isZh ? '额外追问轮次已用完' : 'Extra follow-up rounds are exhausted'}
+                </h2>
+                <p className="text-sm leading-7 text-text-secondary">
+                  {isZh
+                    ? `本轮已达到 ${session.followUpRoundLimit ?? 10} 次额外追问上限，系统先输出当前完整报告。需要继续时，可以在这里再开启下一组 ${session.followUpRoundLimit ?? 10} 次追问。`
+                    : `This run reached the ${session.followUpRoundLimit ?? 10}-round follow-up limit, so the current full report was produced first. You can start another ${session.followUpRoundLimit ?? 10}-round follow-up window here.`}
+                </p>
+                {typeof session.deferredFollowUpQuestionCount === 'number' && session.deferredFollowUpQuestionCount > 0 ? (
+                  <Badge tone="gold">
+                    {isZh
+                      ? `仍有 ${session.deferredFollowUpQuestionCount} 个问题待继续追问`
+                      : `${session.deferredFollowUpQuestionCount} deferred question(s) remain`}
+                  </Badge>
+                ) : null}
+              </div>
+              <Button
+                onClick={() => void requestMoreFollowUpMutation.mutateAsync()}
+                disabled={requestMoreFollowUpMutation.isPending}
+              >
+                {isZh ? `继续 ${session.followUpRoundLimit ?? 10} 次追问` : `Continue ${session.followUpRoundLimit ?? 10} more follow-ups`}
+              </Button>
+            </Card>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {report.highlights.map((highlight) => {
               const localizedHighlight = localizeHighlight(highlight)
@@ -198,7 +278,7 @@ export function ReportPage() {
         </>
       ) : null}
 
-      {sessionQuery.data && !report ? (
+      {session && !report && !failedMessage ? (
         <Card className="p-6 text-sm leading-7 text-text-secondary">{t('analysis.reportFallback')}</Card>
       ) : null}
     </div>

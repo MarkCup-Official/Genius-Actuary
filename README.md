@@ -24,6 +24,7 @@ Genius Actuary is an AI decision analysis workspace. This repository now contain
 cd backend
 py -3.13 -m venv .venv313
 .\.venv313\Scripts\python.exe -m pip install -r requirements.txt
+copy .env.example .env
 .\.venv313\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -39,5 +40,8 @@ Then open [http://localhost:5173](http://localhost:5173).
 ## Notes
 
 - The frontend currently connects to the backend through the live FastAPI session routes.
-- No repository backend API key was found; local web sessions rely on HTTP-only cookies.
+- Backend API secrets should live in `backend/.env`, which is now ignored by git.
+- The analysis adapter can now run in `mock` mode or through an OpenAI-compatible API, but search/chart adapters are still mock implementations.
+- Backend audit logs and session debug views now live behind a separate protected debug web route at `/debug/login`.
+- Product rule: every clarification question must support custom user input. Preset options are only shortcuts and must never block free-form answers in the frontend, adapter mappings, mock data, or backend contracts.
 - See [`frontend/README.md`](frontend/README.md) for the full frontend architecture and environment setup.

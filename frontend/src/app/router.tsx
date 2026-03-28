@@ -4,7 +4,9 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import { Skeleton } from '@/components/feedback/skeleton'
 import { AppShell } from '@/components/layout/app-shell'
+import { DebugShell } from '@/components/layout/debug-shell'
 import { RequireAuth } from '@/features/auth/require-auth'
+import { RequireDebugAuth } from '@/features/logs/require-debug-auth'
 
 const LoginPage = lazy(() => import('@/features/auth/login-page').then((module) => ({ default: module.LoginPage })))
 const DashboardPage = lazy(() =>
@@ -39,6 +41,12 @@ const NotificationsCenterPage = lazy(() =>
 )
 const AuditLogPage = lazy(() =>
   import('@/features/logs/audit-log-page').then((module) => ({ default: module.AuditLogPage })),
+)
+const DebugLoginPage = lazy(() =>
+  import('@/features/logs/debug-login-page').then((module) => ({ default: module.DebugLoginPage })),
+)
+const SessionDebugPage = lazy(() =>
+  import('@/features/logs/session-debug-page').then((module) => ({ default: module.SessionDebugPage })),
 )
 const FileManagerPage = lazy(() =>
   import('@/features/files/file-manager-page').then((module) => ({ default: module.FileManagerPage })),
@@ -100,9 +108,7 @@ export const router = createBrowserRouter([
           { path: '/analysis/session/:sessionId/report', element: withRouteSuspense(<ReportPage />) },
           { path: '/settings', element: withRouteSuspense(<SettingsPage />) },
           { path: '/profile', element: withRouteSuspense(<ProfilePage />) },
-          { path: '/admin/roles', element: withRouteSuspense(<RolesPage />) },
           { path: '/notifications', element: withRouteSuspense(<NotificationsCenterPage />) },
-          { path: '/logs', element: withRouteSuspense(<AuditLogPage />) },
           { path: '/files', element: withRouteSuspense(<FileManagerPage />) },
           { path: '/dataviz', element: withRouteSuspense(<DataVizPage />) },
           { path: '/resources/:resourceKey', element: withRouteSuspense(<ResourceListPage />) },
@@ -115,6 +121,24 @@ export const router = createBrowserRouter([
             path: '/resources/:resourceKey/:recordId/edit',
             element: withRouteSuspense(<ResourceFormPage />),
           },
+        ],
+      },
+    ],
+  },
+  {
+    path: '/debug/login',
+    element: withRouteSuspense(<DebugLoginPage />),
+  },
+  {
+    element: <RequireDebugAuth />,
+    children: [
+      {
+        element: <DebugShell />,
+        children: [
+          { path: '/debug', element: <Navigate to="/debug/logs" replace /> },
+          { path: '/debug/logs', element: withRouteSuspense(<AuditLogPage />) },
+          { path: '/debug/sessions', element: withRouteSuspense(<SessionDebugPage />) },
+          { path: '/debug/admin/roles', element: withRouteSuspense(<RolesPage />) },
         ],
       },
     ],

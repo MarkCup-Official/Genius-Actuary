@@ -126,6 +126,7 @@ export interface ClarificationQuestion {
   unit?: string
   priority: number
   recommended?: string[]
+  answered?: boolean
 }
 
 export interface UserAnswer {
@@ -255,6 +256,7 @@ export interface AnalysisProgress {
   status: SessionStatus
   overallProgress: number
   currentStepLabel: string
+  errorMessage?: string
   stages: AnalysisStage[]
 }
 
@@ -269,6 +271,12 @@ export interface AnalysisSessionSummary {
 }
 
 export interface AnalysisSession extends AnalysisSessionSummary {
+  errorMessage?: string
+  followUpRoundLimit?: number
+  followUpRoundsUsed?: number
+  followUpExtensionsUsed?: number
+  followUpBudgetExhausted?: boolean
+  deferredFollowUpQuestionCount?: number
   questions: ClarificationQuestion[]
   answers: UserAnswer[]
   searchTasks: SearchTask[]

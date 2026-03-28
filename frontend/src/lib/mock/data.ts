@@ -456,7 +456,7 @@ function buildQuestions(
       question: '你对这次决策的风险容忍度更偏保守还是进取？',
       purpose: '风险偏好会影响我们如何解读收益与代价，以及最终推荐的阈值。',
       fieldType: 'slider',
-      allowCustomInput: false,
+      allowCustomInput: true,
       allowSkip: true,
       min: 1,
       max: 10,
@@ -532,7 +532,7 @@ function buildQuestions(
         question: '你更在意月度现金流压力还是总拥有成本？',
         purpose: '同一方案在月供压力与两年总成本上的结论可能完全不同。',
         fieldType: 'single-choice',
-        allowCustomInput: false,
+        allowCustomInput: true,
         allowSkip: false,
         priority: 1,
         options: [

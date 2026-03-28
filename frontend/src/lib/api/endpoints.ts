@@ -2,9 +2,18 @@ export const endpoints = {
   backend: {
     health: '/health',
     bootstrap: '/api/frontend/bootstrap',
+    logout: '/api/auth/logout',
     sessions: '/api/sessions',
+    mySessions: '/api/my/sessions',
+    deleteMyData: '/api/me/data',
     sessionDetail: (sessionId: string) => `/api/sessions/${sessionId}`,
     sessionStep: (sessionId: string) => `/api/sessions/${sessionId}/step`,
+    sessionRequestMoreFollowUp: (sessionId: string) => `/api/sessions/${sessionId}/request-more-follow-up`,
+    debugAuthMe: '/api/debug/auth/me',
+    debugLogs: '/api/debug/logs',
+    debugLogDetail: (logId: string) => `/api/debug/logs/${logId}`,
+    debugSessions: '/api/debug/sessions',
+    debugSessionDetail: (sessionId: string) => `/api/debug/sessions/${sessionId}`,
   },
   auth: {
     login: '/api/auth/login',

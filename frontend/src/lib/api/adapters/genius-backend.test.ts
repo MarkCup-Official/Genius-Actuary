@@ -15,6 +15,15 @@ function buildBackendSession(overrides: Partial<BackendSession> = {}): BackendSe
     mode: 'single_decision',
     problem_statement: 'Should I join the overseas exchange program?',
     status: 'COMPLETED',
+    analysis_rounds_completed: 1,
+    follow_up_round_limit: 10,
+    follow_up_rounds_used: 2,
+    follow_up_extensions_used: 0,
+    follow_up_budget_exhausted: false,
+    deferred_follow_up_question_count: 0,
+    activity_status: 'completed',
+    current_focus: 'Final recommendation and delivery are complete.',
+    last_stop_reason: 'The analysis finished successfully and the final report was generated.',
     clarification_questions: [
       {
         question_id: 'q-1',

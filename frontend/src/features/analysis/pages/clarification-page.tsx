@@ -5,11 +5,13 @@ import { useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
+import { Skeleton } from '@/components/feedback/skeleton'
 import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Textarea } from '@/components/ui/field'
+import { AnalysisPendingView } from '@/features/analysis/components/analysis-pending-view'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
 import { haptics } from '@/lib/utils/haptics'
 import type { ClarificationQuestion, UserAnswer } from '@/types'
@@ -100,11 +102,19 @@ export function ClarificationPage() {
     mutationFn: (answers: UserAnswer[]) => adapter.analysis.submitAnswers(sessionId, { answers }),
     onSuccess: (session) => {
       haptics.trigger('confirm')
+      if (session.status === 'CLARIFYING') {
+        void sessionQuery.refetch()
+        return
+      }
+
       void navigate(`/analysis/session/${session.id}/progress`)
     },
   })
 
-  const questions = useMemo(() => sessionQuery.data?.questions ?? [], [sessionQuery.data?.questions])
+  const questions = useMemo(
+    () => (sessionQuery.data?.questions ?? []).filter((question) => !question.answered),
+    [sessionQuery.data?.questions],
+  )
   const initialValues = useMemo(() => buildInitialValues(questions), [questions])
 
   const text = {
@@ -122,6 +132,34 @@ export function ClarificationPage() {
       uncertain: isZh ? '暂不确定' : 'Uncertain',
       declined: isZh ? '暂不回答' : 'Declined',
     },
+  }
+
+  if (submitMutation.isPending) {
+    return (
+      <AnalysisPendingView
+        eyebrow={t('common.nextStep')}
+        title={isZh ? 'AI 正在分析你的回答' : 'AI is analyzing your answers'}
+        description={
+          isZh
+            ? '系统正在吸收你的补充信息，更新判断框架，并启动正式分析。'
+            : 'The system is absorbing your clarification, updating the decision frame, and starting the full analysis.'
+        }
+        loaderLabel={
+          isZh ? 'AI 正在分析，请耐心等待分析结果生成。' : 'The AI is analyzing now. Please wait while the result is prepared.'
+        }
+        stageLabel={isZh ? '正在推进分析' : 'Advancing analysis'}
+        stageTitle={isZh ? '整理首轮回答' : 'Processing first-round answers'}
+        stageDescription={
+          isZh
+            ? '我们会先整合你的回答，再自动跳转到正式进度页，持续展示分析阶段。'
+            : 'We are consolidating your answers first, then will move you into the live progress page automatically.'
+        }
+        tips={[
+          isZh ? '系统会根据你的回答补齐假设、偏好和约束。' : 'The system is updating assumptions, preferences, and constraints from your answers.',
+          isZh ? '完成初始化后，会继续抓取证据并生成最终报告。' : 'After initialization, it will continue gathering evidence and building the final report.',
+        ]}
+      />
+    )
   }
 
   return (
@@ -148,7 +186,53 @@ export function ClarificationPage() {
         </div>
       </Card>
 
-      {sessionQuery.data ? (
+      {sessionQuery.isLoading ? (
+        <Card className="space-y-4 p-5">
+          <Skeleton className="h-6 w-48 rounded-full" />
+          <Skeleton className="h-24 w-full rounded-[20px]" />
+          <Skeleton className="h-24 w-full rounded-[20px]" />
+        </Card>
+      ) : sessionQuery.error ? (
+        <Card className="space-y-3 border-[rgba(197,109,99,0.35)] bg-[rgba(197,109,99,0.08)] p-5">
+          <h2 className="text-lg font-semibold text-[#f7d4cf]">
+            {isZh ? '分析会话加载失败' : 'Failed to load the analysis session'}
+          </h2>
+          <p className="text-sm leading-7 text-[#f1cbc6]">
+            {isZh
+              ? '会话可能已经创建成功，但当前页面没有拿到后端数据。请重试，或返回重新发起分析。'
+              : 'The session may have been created, but this page could not load the backend data. Try again or start a new run.'}
+          </p>
+          <div className="flex gap-3">
+            <Button type="button" onClick={() => void sessionQuery.refetch()}>
+              {isZh ? '重试加载' : 'Retry'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => void navigate('/analysis/intake')}>
+              {isZh ? '返回输入页' : 'Back to intake'}
+            </Button>
+          </div>
+        </Card>
+      ) : sessionQuery.data && !questions.length ? (
+        <Card className="space-y-4 p-5">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-text-primary">
+              {isZh ? '当前没有待回答的追问' : 'There are no pending follow-up questions'}
+            </h2>
+            <p className="text-sm leading-7 text-text-secondary">
+              {isZh
+                ? '本轮需要用户回答的问题已经处理完毕。你可以返回进度页继续推进，或直接查看当前报告。'
+                : 'The current clarification round is complete. You can return to progress or open the current report.'}
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button type="button" onClick={() => void navigate(`/analysis/session/${sessionId}/progress`)}>
+              {isZh ? '查看进度' : 'Open progress'}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void navigate(`/analysis/session/${sessionId}/report`)}>
+              {isZh ? '查看报告' : 'Open report'}
+            </Button>
+          </div>
+        </Card>
+      ) : sessionQuery.data ? (
         <Formik
           initialValues={initialValues}
           enableReinitialize
@@ -245,9 +329,7 @@ export function ClarificationPage() {
                                     <p className="font-medium">{option.label}</p>
                                     <p className="mt-1 text-xs leading-6 text-text-muted">
                                       {option.description ??
-                                        (isZh
-                                          ? '点击后立即设为当前答案。'
-                                          : 'Click once to set this as the current answer.')}
+                                        (isZh ? '点击后会立刻设为当前答案。' : 'Click once to set this as the current answer.')}
                                     </p>
                                   </div>
                                   {isActive ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-gold-bright" /> : null}

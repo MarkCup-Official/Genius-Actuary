@@ -35,6 +35,12 @@ The current backend is a FastAPI MVP with these live routes:
 
 Important: I did **not** find a backend API key in the repository. The backend currently isolates web sessions with an HTTP-only cookie, so the frontend connects through base URL + browser credentials rather than Bearer auth.
 
+Clarification UX rule:
+
+- Every question in the clarification flow must expose a custom input path.
+- Single-choice, multi-choice, slider, and numeric questions may offer fast presets, but they must still leave room for free-form user context.
+- Frontend rendering should not hide custom input just because an upstream payload says otherwise; this is a product invariant.
+
 ## Quick start
 
 ```bash
@@ -107,6 +113,7 @@ The UI never owns orchestration logic. It talks to a typed adapter interface:
 
 - `mock` mode uses an in-memory database and realtime event bus for demos/tests.
 - `rest` mode now maps the real FastAPI backend session contract into the frontend domain model. Analysis flow is live against the backend; modules the backend does not expose yet still fall back to mock data so the product shell remains complete.
+- Both adapters must preserve the product rule that all clarification questions support custom input.
 
 This keeps the front-end stable while the real backend evolves.
 

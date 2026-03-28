@@ -9,3 +9,13 @@ script = ""
 name = "运行"
 icon = "run"
 command = "powershell -ExecutionPolicy Bypass -File .\\run-demo.ps1"
+
+[[actions]]
+name = "测试"
+icon = "run"
+command = "powershell -ExecutionPolicy Bypass -File .\\run-tests.ps1"
+
+[[actions]]
+name = "Stop"
+icon = "tool"
+command = "powershell -ExecutionPolicy Bypass -File .\\stop-demo.ps1"

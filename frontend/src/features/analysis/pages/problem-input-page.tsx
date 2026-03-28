@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { Form, Formik } from 'formik'
 import { Lightbulb, WandSparkles } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import * as Yup from 'yup'
@@ -10,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/field'
+import { AnalysisPendingView } from '@/features/analysis/components/analysis-pending-view'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
 
 export function ProblemInputPage() {
@@ -17,12 +19,13 @@ export function ProblemInputPage() {
   const navigate = useNavigate()
   const adapter = useApiAdapter()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [sessionFailure, setSessionFailure] = useState<string | null>(null)
   const mode = (searchParams.get('mode') as 'single-option' | 'multi-option' | null) ?? 'single-option'
   const isChinese = i18n.language.startsWith('zh')
 
   const promptSuggestions = isChinese
     ? [
-        '我是否应该参加大三的海外交换项目？',
+        '我是否应该在大三参加海外交换项目？',
         '我是否应该买车，而不是继续依赖公共交通？',
         '我现在是应该申请研究生，还是先工作两年？',
       ]
@@ -35,9 +38,46 @@ export function ProblemInputPage() {
   const createMutation = useMutation({
     mutationFn: adapter.analysis.create,
     onSuccess: (session) => {
+      if (session.status === 'FAILED') {
+        setSessionFailure(
+          session.errorMessage ??
+            (isChinese ? 'LLM 在多次重试后仍然失败，请检查模型配置后再试。' : 'The LLM failed after all retry attempts.'),
+        )
+        return
+      }
+
+      setSessionFailure(null)
       void navigate(`/analysis/session/${session.id}/clarify`)
     },
   })
+
+  if (createMutation.isPending) {
+    return (
+      <AnalysisPendingView
+        eyebrow={t('common.nextStep')}
+        title={isChinese ? 'AI 正在分析你的问题' : 'AI is analyzing your prompt'}
+        description={
+          isChinese
+            ? '系统正在创建分析会话、整理问题背景，并生成第一轮高价值追问。'
+            : 'The system is creating the session, organizing the problem context, and preparing the first clarification round.'
+        }
+        loaderLabel={
+          isChinese ? 'AI 正在分析，请稍候，不要重复点击。' : 'The AI is analyzing now. Please wait without clicking again.'
+        }
+        stageLabel={isChinese ? '正在初始化' : 'Initializing'}
+        stageTitle={isChinese ? '创建分析会话' : 'Creating analysis session'}
+        stageDescription={
+          isChinese
+            ? '我们正在把你的问题转成结构化分析任务，完成后会自动进入补充信息页面。'
+            : 'We are converting your prompt into a structured analysis task. You will move to clarification automatically when it is ready.'
+        }
+        tips={[
+          isChinese ? '系统会提炼目标、约束和关键不确定性。' : 'The system is extracting goals, constraints, and key uncertainties.',
+          isChinese ? '如果问题较复杂，这一步可能持续几秒。' : 'This step can take a few seconds for more complex prompts.',
+        ]}
+      />
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -71,6 +111,7 @@ export function ProblemInputPage() {
               problemStatement: Yup.string().min(12).required(),
             })}
             onSubmit={async (values) => {
+              setSessionFailure(null)
               await createMutation.mutateAsync({
                 mode,
                 problemStatement: values.problemStatement,
@@ -121,6 +162,15 @@ export function ProblemInputPage() {
                   <WandSparkles className="size-4" />
                   {t('analysis.startAnalysis')}
                 </Button>
+
+                {createMutation.error || sessionFailure ? (
+                  <p className="rounded-2xl border border-[rgba(197,109,99,0.35)] bg-[rgba(197,109,99,0.12)] px-4 py-3 text-sm text-[#f7d4cf]">
+                    {sessionFailure ??
+                      (isChinese
+                        ? '开始分析失败，请检查后端服务或稍后重试。'
+                        : 'Failed to start the analysis. Please check the backend and try again.')}
+                  </p>
+                ) : null}
               </Form>
             )}
           </Formik>

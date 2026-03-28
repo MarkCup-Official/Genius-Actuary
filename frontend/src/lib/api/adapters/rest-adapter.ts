@@ -2,18 +2,23 @@ import { apiClient } from '@/lib/api/client'
 import type { ApiAdapter } from '@/lib/api/adapters/base'
 import {
   COOKIE_SESSION_TOKEN,
+  type BackendAuditLogEntry,
+  type BackendAuditLogListResponse,
+  type BackendDebugSessionListResponse,
+  type BackendPersonalDataDeletionResponse,
   type BackendUserAnswer,
   type BackendBootstrapResponse,
   type BackendSession,
   type BackendSessionStepResponse,
+  type BackendRequestMoreFollowUpResponse,
   backendSessionToResourceRecord,
   createBackendPseudoUser,
-  getTrackedSessionIds,
+  mapAuditLogEntry,
+  mapDebugSessionSummary,
   mapBackendProgress,
   mapBackendReport,
   mapBackendSession,
   mapModeDefinitions,
-  rememberTrackedSession,
   toBackendAnswers,
 } from '@/lib/api/adapters/genius-backend'
 import { mockApiAdapter } from '@/lib/api/adapters/mock-adapter'
@@ -42,9 +47,7 @@ async function getBootstrap(force = false) {
 }
 
 async function fetchBackendSession(sessionId: string) {
-  const session = await apiClient.request<BackendSession>(endpoints.backend.sessionDetail(sessionId))
-  rememberTrackedSession(session.session_id)
-  return session
+  return apiClient.request<BackendSession>(endpoints.backend.sessionDetail(sessionId))
 }
 
 async function advanceBackendSession(sessionId: string, answers: BackendUserAnswer[] = []) {
@@ -84,20 +87,8 @@ function sessionToSummary(session: AnalysisSession) {
 }
 
 async function listKnownBackendSessions() {
-  const sessionIds = getTrackedSessionIds()
-  const sessions = await Promise.all(
-    sessionIds.map(async (sessionId) => {
-      try {
-        return mapBackendSession(await fetchBackendSession(sessionId))
-      } catch {
-        return null
-      }
-    }),
-  )
-
-  return sessions
-    .filter((session): session is AnalysisSession => Boolean(session))
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  const sessions = await apiClient.request<BackendSession[]>(endpoints.backend.mySessions)
+  return sessions.map(mapBackendSession)
 }
 
 async function buildDashboardOverview() {
@@ -186,10 +177,22 @@ export const restApiAdapter: ApiAdapter = {
     },
     async logout() {
       bootstrapPromise = null
+      await apiClient.request<void>(endpoints.backend.logout, {
+        method: 'POST',
+      })
     },
     async me() {
       await getBootstrap()
       return createBackendPseudoUser()
+    },
+    async deletePersonalData() {
+      bootstrapPromise = null
+      const payload = await apiClient.request<BackendPersonalDataDeletionResponse>(endpoints.backend.deleteMyData, {
+        method: 'DELETE',
+      })
+      return {
+        deletedSessionCount: payload.deleted_session_count,
+      }
     },
   },
   modes: {
@@ -220,7 +223,6 @@ export const restApiAdapter: ApiAdapter = {
         }),
       })
 
-      rememberTrackedSession(step.session_id)
       return mapBackendSession(await fetchBackendSession(step.session_id))
     },
     async getById(sessionId) {
@@ -235,6 +237,16 @@ export const restApiAdapter: ApiAdapter = {
       })
 
       return mapBackendSession(await fetchBackendSession(sessionId))
+    },
+    async requestMoreFollowUp(sessionId) {
+      const payload = await apiClient.request<BackendRequestMoreFollowUpResponse>(
+        endpoints.backend.sessionRequestMoreFollowUp(sessionId),
+        {
+          method: 'POST',
+        },
+      )
+
+      return mapBackendSession(payload.session)
     },
     async getProgress(sessionId) {
       let session = await fetchBackendSession(sessionId)
@@ -281,8 +293,42 @@ export const restApiAdapter: ApiAdapter = {
     markAllRead: mockApiAdapter.notifications.markAllRead,
   },
   logs: {
-    list: mockApiAdapter.logs.list,
-    getById: mockApiAdapter.logs.getById,
+    async list(meta) {
+      const payload = await apiClient.request<BackendAuditLogListResponse>(endpoints.backend.debugLogs)
+      const filtered = payload.logs
+        .map(mapAuditLogEntry)
+        .filter((log) => matchQuery(`${log.action} ${log.summary} ${log.target} ${log.actor}`, meta?.q))
+      return paginate(filtered, meta)
+    },
+    async getById(logId) {
+      const payload = await apiClient.request<BackendAuditLogEntry>(endpoints.backend.debugLogDetail(logId))
+      return mapAuditLogEntry(payload)
+    },
+  },
+  debug: {
+    async listSessions() {
+      const payload = await apiClient.request<BackendDebugSessionListResponse>(endpoints.backend.debugSessions)
+      return payload.sessions.map(mapDebugSessionSummary)
+    },
+    async getSession(sessionId) {
+      const session = await apiClient.request<BackendSession>(endpoints.backend.debugSessionDetail(sessionId))
+      return {
+        summary: mapDebugSessionSummary({
+          session_id: session.session_id,
+          owner_client_id: session.owner_client_id,
+          mode: session.mode,
+          problem_statement: session.problem_statement,
+          status: session.status,
+          event_count: session.events.length,
+          answer_count: session.answers.length,
+          evidence_count: session.evidence_items.length,
+          search_task_count: session.search_tasks.length,
+          created_at: session.created_at,
+          updated_at: session.updated_at,
+        }),
+        session,
+      }
+    },
   },
   files: {
     list: mockApiAdapter.files.list,

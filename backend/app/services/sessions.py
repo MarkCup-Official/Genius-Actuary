@@ -1,44 +1,141 @@
-from app.domain.models import AnalysisMode, AnalysisSession, SessionEvent, UserAnswer
+from app.domain.models import AnalysisMode, AnalysisSession, SessionEvent, SessionStatus, UserAnswer
 from app.persistence.base import SessionRepository
+from app.services.audit import AuditLogService
 
 
 class SessionService:
-    def __init__(self, repository: SessionRepository) -> None:
+    def __init__(
+        self,
+        repository: SessionRepository,
+        audit_log_service: AuditLogService,
+        follow_up_round_limit: int = 10,
+    ) -> None:
         self.repository = repository
+        self.audit_log_service = audit_log_service
+        self.follow_up_round_limit = max(1, follow_up_round_limit)
 
     def create_session(
         self,
         mode: AnalysisMode,
         problem_statement: str,
         owner_client_id: str,
+        ip_address: str = "unknown",
     ) -> AnalysisSession:
         session = AnalysisSession(
             owner_client_id=owner_client_id,
             mode=mode,
             problem_statement=problem_statement,
+            follow_up_round_limit=self.follow_up_round_limit,
         )
-        session.events.append(
-            SessionEvent(
-                kind="session_created",
-                payload={
-                    "mode": mode.value,
-                    "problem_statement": problem_statement,
-                    "owner_client_id": owner_client_id,
-                },
-            )
+        session.events.extend(
+            [
+                SessionEvent(
+                    kind="session_create_requested",
+                    payload={
+                        "mode": mode.value,
+                        "problem_statement_length": len(problem_statement),
+                        "owner_client_id": owner_client_id,
+                        "ip_address": ip_address,
+                    },
+                ),
+                SessionEvent(
+                    kind="session_created",
+                    payload={
+                        "mode": mode.value,
+                        "problem_statement": problem_statement,
+                        "owner_client_id": owner_client_id,
+                    },
+                ),
+            ]
         )
-        return self.repository.save(session)
+        saved = self.repository.save(session)
+        self.audit_log_service.write(
+            action="SESSION_CREATED",
+            actor=owner_client_id,
+            target=saved.session_id,
+            ip_address=ip_address,
+            summary=f"Created {mode.value} session for problem: {problem_statement}",
+            metadata={
+                "mode": mode.value,
+                "owner_client_id": owner_client_id,
+                "problem_statement_length": str(len(problem_statement)),
+                "session_status": saved.status.value,
+            },
+        )
+        return saved
 
     def get_session(self, session_id: str) -> AnalysisSession | None:
         return self.repository.get(session_id)
+
+    def list_sessions(self) -> list[AnalysisSession]:
+        return self.repository.list_sessions()
+
+    def list_sessions_by_owner(self, owner_client_id: str) -> list[AnalysisSession]:
+        return self.repository.list_sessions_by_owner(owner_client_id)
+
+    def delete_sessions_by_owner(self, owner_client_id: str) -> int:
+        deleted = self.repository.delete_sessions_by_owner(owner_client_id)
+        self.audit_log_service.write(
+            action="PERSONAL_DATA_DELETED",
+            actor=owner_client_id,
+            target=owner_client_id,
+            ip_address="cookie-session",
+            summary=f"Deleted {deleted} session(s) for owner.",
+            metadata={"deleted_session_count": str(deleted)},
+        )
+        return deleted
+
+    def request_more_follow_up(self, session_id: str) -> AnalysisSession | None:
+        session = self.repository.get(session_id)
+        if session is None:
+            return None
+
+        session.follow_up_rounds_used = 0
+        session.follow_up_extensions_used += 1
+        session.follow_up_budget_exhausted = False
+        session.deferred_follow_up_question_count = 0
+        if session.status != SessionStatus.FAILED:
+            session.status = SessionStatus.ANALYZING
+            session.activity_status = "waiting_for_llm_round_planning"
+            session.last_stop_reason = "The user requested another follow-up budget window."
+        session.events.append(
+            SessionEvent(
+                kind="follow_up_budget_extended",
+                payload={
+                    "follow_up_round_limit": session.follow_up_round_limit,
+                    "follow_up_extensions_used": session.follow_up_extensions_used,
+                },
+            )
+        )
+        saved = self.repository.save(session)
+        self.audit_log_service.write(
+            action="FOLLOW_UP_BUDGET_EXTENDED",
+            actor=saved.owner_client_id,
+            target=session_id,
+            ip_address="cookie-session",
+            summary=f"Granted {saved.follow_up_round_limit} additional follow-up round(s).",
+            metadata={
+                "follow_up_round_limit": str(saved.follow_up_round_limit),
+                "follow_up_extensions_used": str(saved.follow_up_extensions_used),
+            },
+        )
+        return saved
 
     def record_answers(self, session_id: str, answers: list[UserAnswer]) -> AnalysisSession | None:
         session = self.repository.get(session_id)
         if session is None:
             return None
 
+        answer_summaries: list[dict[str, str]] = []
         for answer in answers:
             session.answers.append(answer)
+            answer_summaries.append(
+                {
+                    "question_id": answer.question_id,
+                    "source": answer.source,
+                    "value_preview": answer.value[:120],
+                }
+            )
             for question in session.clarification_questions:
                 if question.question_id == answer.question_id:
                     question.answered = True
@@ -46,7 +143,22 @@ class SessionService:
         session.events.append(
             SessionEvent(
                 kind="answers_recorded",
-                payload={"count": len(answers)},
+                payload={
+                    "count": len(answers),
+                    "answers": answer_summaries,
+                    "answered_question_count": len(
+                        [question for question in session.clarification_questions if question.answered]
+                    ),
+                },
             )
         )
-        return self.repository.save(session)
+        saved = self.repository.save(session)
+        self.audit_log_service.write(
+            action="ANSWERS_RECORDED",
+            actor=saved.owner_client_id,
+            target=session_id,
+            ip_address="cookie-session",
+            summary=f"Recorded {len(answers)} clarification answer(s).",
+            metadata={"answer_count": str(len(answers))},
+        )
+        return saved

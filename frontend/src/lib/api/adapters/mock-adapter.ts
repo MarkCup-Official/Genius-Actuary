@@ -8,6 +8,7 @@ import {
   users,
 } from '@/lib/mock/data'
 import type { ApiAdapter } from '@/lib/api/adapters/base'
+import type { BackendSession } from '@/lib/api/adapters/genius-backend'
 import { useAppStore } from '@/lib/store/app-store'
 import type {
   AnalysisProgress,
@@ -194,6 +195,10 @@ function phaseStatus(cursor: number, index: number): AnalysisProgress['stages'][
   return 'pending'
 }
 
+function toDebugMode(mode: AnalysisSession['mode']): BackendSession['mode'] {
+  return mode === 'multi-option' ? 'multi_option' : 'single_decision'
+}
+
 export const mockApiAdapter: ApiAdapter = {
   auth: {
     async login(payload) {
@@ -219,6 +224,17 @@ export const mockApiAdapter: ApiAdapter = {
     async me() {
       await wait(120)
       return resolveCurrentUser()
+    },
+    async deletePersonalData() {
+      await wait(120)
+      const deletedSessionCount = db.sessions.length
+      db.sessions = []
+      db.logs = []
+      db.notifications = []
+      db.files = []
+      Object.keys(db.reports).forEach((key) => delete db.reports[key])
+      Object.keys(db.progressCursor).forEach((key) => delete db.progressCursor[key])
+      return { deletedSessionCount }
     },
   },
   modes: {
@@ -253,6 +269,11 @@ export const mockApiAdapter: ApiAdapter = {
         status: 'CLARIFYING',
         createdAt: nowIso(),
         updatedAt: nowIso(),
+        followUpRoundLimit: 10,
+        followUpRoundsUsed: 0,
+        followUpExtensionsUsed: 0,
+        followUpBudgetExhausted: false,
+        deferredFollowUpQuestionCount: 0,
         lastInsight: 'The first clarification round focuses on constraints and success criteria.',
         questions: bundle.questions,
         answers: [],
@@ -310,6 +331,17 @@ export const mockApiAdapter: ApiAdapter = {
         payload: sessionSummary(session),
       })
 
+      return { ...session }
+    },
+    async requestMoreFollowUp(sessionId) {
+      await wait(160)
+      const session = findSession(sessionId)
+      session.followUpRoundsUsed = 0
+      session.followUpExtensionsUsed = (session.followUpExtensionsUsed ?? 0) + 1
+      session.followUpBudgetExhausted = false
+      session.deferredFollowUpQuestionCount = 0
+      session.status = 'CLARIFYING'
+      session.updatedAt = nowIso()
       return { ...session }
     },
     async getProgress(sessionId) {
@@ -477,6 +509,147 @@ export const mockApiAdapter: ApiAdapter = {
       }
 
       return structuredClone(log)
+    },
+  },
+  debug: {
+    async listSessions() {
+      await wait(120)
+      return db.sessions
+        .map((session) => ({
+          id: session.id,
+          ownerClientId: 'mock-debug-owner',
+          mode: toDebugMode(session.mode),
+          problemStatement: session.problemStatement,
+          status: session.status,
+          eventCount: session.answers.length + session.searchTasks.length + session.evidence.length + 1,
+          answerCount: session.answers.length,
+          evidenceCount: session.evidence.length,
+          searchTaskCount: session.searchTasks.length,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+        }))
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    },
+    async getSession(sessionId) {
+      await wait(120)
+      const session = findSession(sessionId)
+      return {
+        summary: {
+          id: session.id,
+          ownerClientId: 'mock-debug-owner',
+          mode: toDebugMode(session.mode),
+          problemStatement: session.problemStatement,
+          status: session.status,
+          eventCount: session.answers.length + session.searchTasks.length + session.evidence.length + 1,
+          answerCount: session.answers.length,
+          evidenceCount: session.evidence.length,
+          searchTaskCount: session.searchTasks.length,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+        },
+        session: {
+          session_id: session.id,
+          owner_client_id: 'mock-debug-owner',
+          mode: toDebugMode(session.mode),
+          problem_statement: session.problemStatement,
+          status: session.status,
+          analysis_rounds_completed: session.status === 'COMPLETED' ? 1 : 0,
+          follow_up_round_limit: session.followUpRoundLimit ?? 10,
+          follow_up_rounds_used: session.followUpRoundsUsed ?? 0,
+          follow_up_extensions_used: session.followUpExtensionsUsed ?? 0,
+          follow_up_budget_exhausted: session.followUpBudgetExhausted ?? false,
+          deferred_follow_up_question_count: session.deferredFollowUpQuestionCount ?? 0,
+          activity_status:
+            session.status === 'COMPLETED'
+              ? 'completed'
+              : session.status === 'ANALYZING'
+                ? 'running_mock_analysis_pipeline'
+                : 'waiting_for_user_clarification_answers',
+          current_focus:
+            session.status === 'COMPLETED'
+              ? 'Mock report is ready for review.'
+              : session.status === 'ANALYZING'
+                ? 'Mock evidence gathering and calculations are in progress.'
+                : 'Mock session is waiting for user clarification answers.',
+          last_stop_reason:
+            session.status === 'COMPLETED'
+              ? 'The mock analysis completed successfully.'
+              : session.status === 'ANALYZING'
+                ? 'The mock pipeline is still processing staged analysis work.'
+                : 'The mock session has unanswered clarification questions.',
+          clarification_questions: session.questions.map((question) => ({
+            question_id: question.id,
+            question_text: question.question,
+            purpose: question.purpose,
+            options: question.options?.map((option) => option.label) ?? [],
+            allow_custom_input: question.allowCustomInput,
+            allow_skip: question.allowSkip,
+            priority: question.priority,
+            answered: session.answers.some((answer) => answer.questionId === question.id),
+          })),
+          answers: session.answers.map((answer) => ({
+            question_id: answer.questionId,
+            value: answer.customInput ?? answer.selectedOptions?.join(', ') ?? String(answer.numericValue ?? answer.answerStatus),
+            source: 'mock-frontend',
+            answered_at: session.updatedAt,
+          })),
+          search_tasks: session.searchTasks.map((task) => ({
+            task_id: task.id,
+            search_topic: task.topic,
+            search_goal: task.goal,
+            search_scope: task.scope,
+            suggested_queries: task.suggestedQueries,
+            required_fields: task.requiredFields,
+            freshness_requirement: task.freshnessRequirement,
+            status: task.status,
+          })),
+          calculation_tasks: session.calculations.map((task) => ({
+            task_id: task.id,
+            objective: task.taskType,
+            formula_hint: task.formulaExpression,
+            input_params: task.inputParams,
+            status: task.result,
+          })),
+          evidence_items: session.evidence.map((item) => ({
+            evidence_id: item.id,
+            title: item.title,
+            source_url: item.sourceUrl,
+            source_name: item.sourceName,
+            fetched_at: item.fetchedAt,
+            summary: item.summary,
+            extracted_facts: item.extractedFacts,
+            confidence: item.confidence,
+          })),
+          chart_artifacts: [],
+          major_conclusions: session.conclusions.map((item) => ({
+            conclusion_id: item.id,
+            content: item.conclusion,
+            conclusion_type: item.conclusionType,
+            basis_refs: item.basisRefs,
+            confidence: item.confidence,
+          })),
+          report: null,
+          events: [
+            {
+              timestamp: session.createdAt,
+              kind: 'session_created',
+              payload: {
+                mode: session.mode,
+              },
+            },
+            ...session.answers.map((answer, index) => ({
+              timestamp: session.updatedAt,
+              kind: 'answer_recorded',
+              payload: {
+                order: index + 1,
+                question_id: answer.questionId,
+              },
+            })),
+          ],
+          created_at: session.createdAt,
+          updated_at: session.updatedAt,
+        },
+      }
     },
   },
   files: {

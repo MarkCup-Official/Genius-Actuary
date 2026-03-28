@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, Hourglass } from 'lucide-react'
+import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -20,15 +21,22 @@ export function ProgressPage() {
   const progressQuery = useQuery({
     queryKey: ['analysis', sessionId, 'progress'],
     queryFn: () => adapter.analysis.getProgress(sessionId),
-    refetchInterval: (query) => (query.state.data?.status === 'COMPLETED' ? false : 1400),
+    refetchInterval: (query) =>
+      query.state.data?.status === 'COMPLETED' || query.state.data?.status === 'FAILED' ? false : 1400,
   })
 
   const progress = progressQuery.data
 
+  useEffect(() => {
+    if (progress?.status === 'CLARIFYING') {
+      void navigate(`/analysis/session/${sessionId}/clarify`, { replace: true })
+    }
+  }, [navigate, progress?.status, sessionId])
+
   const stageText = {
     clarify: {
       title: isZh ? '梳理决策上下文' : 'Clarify decision context',
-      description: isZh ? '补齐目标、约束与缺失的关键事实。' : 'Collect goals, constraints, and missing high-value facts.',
+      description: isZh ? '补齐目标、约束与缺失的关键信息。' : 'Collect goals, constraints, and missing high-value facts.',
     },
     plan: {
       title: isZh ? '规划分析轮次' : 'Plan analysis round',
@@ -43,6 +51,10 @@ export function ProgressPage() {
       description: isZh ? '整合摘要、建议、依据与图表引用。' : 'Build the final report summary, recommendations, and chart references.',
     },
   }
+
+  const failureMessage =
+    progress?.errorMessage ??
+    (isZh ? 'LLM 连续重试后仍然失败，请检查模型配置或稍后重试。' : 'The LLM failed after all retry attempts.')
 
   return (
     <div className="space-y-6">
@@ -62,19 +74,27 @@ export function ProgressPage() {
       <div className="grid gap-4 xl:grid-cols-[1fr_0.95fr]">
         <GoldenSandLoader
           label={
-            progress?.status === 'COMPLETED'
-              ? t('analysis.progressReadyHint')
-              : progress?.currentStepLabel ?? (isZh ? '正在整理结构化分析结果' : 'Preparing structured analysis')
+            progress?.status === 'FAILED'
+              ? failureMessage
+              : progress?.status === 'COMPLETED'
+                ? t('analysis.progressReadyHint')
+                : progress?.currentStepLabel ?? (isZh ? '正在整理结构化分析结果' : 'Preparing structured analysis')
           }
         />
 
         <Card className="space-y-4 p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-text-primary">{t('analysis.progressStageTitle')}</h2>
-            <Badge tone={progress?.status === 'COMPLETED' ? 'success' : 'gold'}>
+            <Badge tone={progress?.status === 'COMPLETED' ? 'success' : progress?.status === 'FAILED' ? 'warning' : 'gold'}>
               {progress?.overallProgress ?? 0}%
             </Badge>
           </div>
+
+          {progress?.status === 'FAILED' ? (
+            <div className="rounded-[20px] border border-[rgba(197,109,99,0.35)] bg-[rgba(197,109,99,0.08)] p-4 text-sm leading-7 text-[#f1cbc6]">
+              {failureMessage}
+            </div>
+          ) : null}
 
           <div className="space-y-3">
             {progress?.stages.map((stage) => {

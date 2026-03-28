@@ -21,12 +21,14 @@ import type {
   User,
   UserProfile,
 } from '@/types'
+import type { DebugSessionDetail, DebugSessionSummary } from '@/lib/api/adapters/genius-backend'
 
 export interface ApiAdapter {
   auth: {
     login(payload: LoginPayload): Promise<AuthSession>
     logout(): Promise<void>
     me(): Promise<User>
+    deletePersonalData(): Promise<{ deletedSessionCount: number }>
   }
   modes: {
     list(): Promise<ModeDefinition[]>
@@ -39,6 +41,7 @@ export interface ApiAdapter {
     create(payload: CreateSessionPayload): Promise<AnalysisSession>
     getById(sessionId: string): Promise<AnalysisSession>
     submitAnswers(sessionId: string, payload: SubmitAnswersPayload): Promise<AnalysisSession>
+    requestMoreFollowUp(sessionId: string): Promise<AnalysisSession>
     getProgress(sessionId: string): Promise<AnalysisProgress>
     getReport(sessionId: string): Promise<AnalysisReport>
   }
@@ -62,6 +65,10 @@ export interface ApiAdapter {
   logs: {
     list(meta?: RequestMeta): Promise<PaginatedResponse<AuditLogEntry>>
     getById(logId: string): Promise<AuditLogEntry>
+  }
+  debug: {
+    listSessions(): Promise<DebugSessionSummary[]>
+    getSession(sessionId: string): Promise<DebugSessionDetail>
   }
   files: {
     list(): Promise<FileItem[]>

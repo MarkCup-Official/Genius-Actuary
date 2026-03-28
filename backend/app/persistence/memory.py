@@ -18,3 +18,37 @@ class InMemorySessionRepository(SessionRepository):
     def get(self, session_id: str) -> AnalysisSession | None:
         session = self._sessions.get(session_id)
         return deepcopy(session) if session else None
+
+    def list_sessions(self) -> list[AnalysisSession]:
+        return [
+            deepcopy(session)
+            for session in sorted(
+                self._sessions.values(),
+                key=lambda item: item.updated_at,
+                reverse=True,
+            )
+        ]
+
+    def list_sessions_by_owner(self, owner_client_id: str) -> list[AnalysisSession]:
+        return [
+            deepcopy(session)
+            for session in sorted(
+                (
+                    item
+                    for item in self._sessions.values()
+                    if item.owner_client_id == owner_client_id
+                ),
+                key=lambda item: item.updated_at,
+                reverse=True,
+            )
+        ]
+
+    def delete_sessions_by_owner(self, owner_client_id: str) -> int:
+        session_ids = [
+            session_id
+            for session_id, session in self._sessions.items()
+            if session.owner_client_id == owner_client_id
+        ]
+        for session_id in session_ids:
+            del self._sessions[session_id]
+        return len(session_ids)

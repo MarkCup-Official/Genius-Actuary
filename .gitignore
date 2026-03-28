@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv*/
+
+# Backend API secrets
+backend/.env
+backend/.env.*
+!backend/.env.example
