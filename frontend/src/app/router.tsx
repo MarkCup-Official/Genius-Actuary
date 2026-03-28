@@ -18,6 +18,9 @@ const ModeSelectionPage = lazy(() =>
 const ProblemInputPage = lazy(() =>
   import('@/features/analysis/pages/problem-input-page').then((module) => ({ default: module.ProblemInputPage })),
 )
+const AnalysisSessionPage = lazy(() =>
+  import('@/features/analysis/pages/analysis-session-page').then((module) => ({ default: module.AnalysisSessionPage })),
+)
 const ClarificationPage = lazy(() =>
   import('@/features/analysis/pages/clarification-page').then((module) => ({ default: module.ClarificationPage })),
 )
@@ -97,6 +100,10 @@ export const router = createBrowserRouter([
           { path: '/dashboard', element: withRouteSuspense(<DashboardPage />) },
           { path: '/analysis/modes', element: withRouteSuspense(<ModeSelectionPage />) },
           { path: '/analysis/intake', element: withRouteSuspense(<ProblemInputPage />) },
+          {
+            path: '/analysis/session/:sessionId',
+            element: withRouteSuspense(<AnalysisSessionPage />),
+          },
           {
             path: '/analysis/session/:sessionId/clarify',
             element: withRouteSuspense(<ClarificationPage />),

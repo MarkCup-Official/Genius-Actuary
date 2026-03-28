@@ -1,0 +1,15 @@
+﻿{
+    "frontend_url":  "http://127.0.0.1:5173",
+    "backend_pid":  5432,
+    "frontend_error_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\frontend.err.log",
+    "frontend_install_error_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\frontend.install.err.log",
+    "frontend_pid":  5604,
+    "frontend_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\frontend.out.log",
+    "backend_error_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\backend.err.log",
+    "backend_install_error_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\backend.install.err.log",
+    "backend_debug_ui_url":  "http://127.0.0.1:5173/debug/login",
+    "backend_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\backend.out.log",
+    "frontend_install_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\frontend.install.log",
+    "backend_install_log":  "M:\\Documents\\Practice\\Genius-Actuary\\.codex-demo\\backend.install.log",
+    "backend_url":  "http://127.0.0.1:8000"
+}

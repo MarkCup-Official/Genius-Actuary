@@ -40,6 +40,9 @@ export function ResourceListPage() {
     createRecord: isZh ? '新建记录' : 'Create record',
   }
 
+  const getOpenPath = (record: ResourceRecord) =>
+    resourceKey === 'analyses' ? `/analysis/session/${record.id}` : `/resources/${resourceKey}/${record.id}`
+
   const columns = useMemo<ColumnDef<ResourceRecord>[]>(() => {
     if (!definition) {
       return []
@@ -59,7 +62,7 @@ export function ResourceListPage() {
         id: 'actions',
         cell: ({ row }: { row: { original: ResourceRecord } }) => (
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => void navigate(`/resources/${resourceKey}/${row.original.id}`)}>
+            <Button variant="secondary" size="sm" onClick={() => void navigate(getOpenPath(row.original))}>
               {text.open}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => void navigate(`/resources/${resourceKey}/${row.original.id}/edit`)}>

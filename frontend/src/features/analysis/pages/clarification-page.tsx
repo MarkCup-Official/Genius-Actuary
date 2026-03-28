@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Form, Formik } from 'formik'
 import { CheckCircle2, CircleHelp } from 'lucide-react'
 import { useMemo } from 'react'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Textarea } from '@/components/ui/field'
 import { AnalysisPendingView } from '@/features/analysis/components/analysis-pending-view'
+import { ApiError } from '@/lib/api/client'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
 import { haptics } from '@/lib/utils/haptics'
 import type { ClarificationQuestion, UserAnswer } from '@/types'
@@ -29,27 +30,39 @@ function buildInitialValues(questions: ClarificationQuestion[]) {
 }
 
 function toAnswers(questions: ClarificationQuestion[], values: ClarificationValues): UserAnswer[] {
-  return questions.map((question) => {
+  return questions.flatMap((question) => {
     const rawStatus = String(values[`${question.id}__status`] ?? 'answered')
     const selectedValue = values[question.id]
-    const customInput = String(values[`${question.id}__custom`] ?? '')
+    const customInput = String(values[`${question.id}__custom`] ?? '').trim()
+    const selectedOptions =
+      Array.isArray(selectedValue) && selectedValue.length
+        ? selectedValue
+        : typeof selectedValue === 'string' && selectedValue
+          ? [selectedValue]
+          : undefined
+    const numericValue =
+      question.fieldType === 'slider' || question.fieldType === 'number'
+        ? Number(selectedValue || 0)
+        : undefined
+    const hasExplicitAnswer =
+      Boolean(selectedOptions?.length) ||
+      Boolean(customInput) ||
+      (typeof numericValue === 'number' &&
+        Number.isFinite(numericValue) &&
+        (question.fieldType === 'slider' || question.fieldType === 'number'))
 
-    return {
+    if (rawStatus === 'answered' && !hasExplicitAnswer) {
+      return []
+    }
+
+    return [{
       id: `${question.id}-answer`,
       questionId: question.id,
       answerStatus: rawStatus as UserAnswer['answerStatus'],
-      selectedOptions:
-        Array.isArray(selectedValue) && selectedValue.length
-          ? selectedValue
-          : typeof selectedValue === 'string' && selectedValue
-            ? [selectedValue]
-            : undefined,
+      selectedOptions,
       customInput: customInput || undefined,
-      numericValue:
-        question.fieldType === 'slider' || question.fieldType === 'number'
-          ? Number(selectedValue || 0)
-          : undefined,
-    }
+      numericValue,
+    }]
   })
 }
 
@@ -86,11 +99,29 @@ function summarizeSelection(
   return ''
 }
 
+function getSubmitErrorMessage(error: unknown, isZh: boolean) {
+  if (error instanceof ApiError) {
+    const detail =
+      error.details && typeof error.details === 'object' && 'detail' in error.details
+        ? String((error.details as { detail?: unknown }).detail ?? '').trim()
+        : ''
+
+    if (detail) {
+      return detail
+    }
+  }
+
+  return isZh
+    ? '本轮答案提交失败，页面已保留当前填写内容。请稍后重试，或前往调试页查看后端错误。'
+    : 'Submitting this round failed. Your current answers are still on the page. Please retry or inspect the backend error details.'
+}
+
 export function ClarificationPage() {
   const { i18n, t } = useTranslation()
   const navigate = useNavigate()
   const { sessionId = '' } = useParams()
   const adapter = useApiAdapter()
+  const queryClient = useQueryClient()
   const isZh = i18n.language.startsWith('zh')
 
   const sessionQuery = useQuery({
@@ -101,13 +132,16 @@ export function ClarificationPage() {
   const submitMutation = useMutation({
     mutationFn: (answers: UserAnswer[]) => adapter.analysis.submitAnswers(sessionId, { answers }),
     onSuccess: (session) => {
+      queryClient.setQueryData(['analysis', sessionId], session)
       haptics.trigger('confirm')
       if (session.status === 'CLARIFYING') {
-        void sessionQuery.refetch()
         return
       }
 
       void navigate(`/analysis/session/${session.id}/progress`)
+    },
+    onError: () => {
+      void sessionQuery.refetch()
     },
   })
 
@@ -186,6 +220,25 @@ export function ClarificationPage() {
         </div>
       </Card>
 
+      {submitMutation.isError ? (
+        <Card className="space-y-3 border-[rgba(197,109,99,0.35)] bg-[rgba(197,109,99,0.08)] p-5">
+          <h2 className="text-lg font-semibold text-[#f7d4cf]">
+            {isZh ? '本轮提交失败' : 'Failed to submit this round'}
+          </h2>
+          <p className="text-sm leading-7 text-[#f1cbc6]">
+            {getSubmitErrorMessage(submitMutation.error, isZh)}
+          </p>
+          <div className="flex gap-3">
+            <Button type="button" onClick={() => submitMutation.reset()}>
+              {isZh ? '继续修改后重试' : 'Review and retry'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => void sessionQuery.refetch()}>
+              {isZh ? '刷新会话状态' : 'Refresh session'}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       {sessionQuery.isLoading ? (
         <Card className="space-y-4 p-5">
           <Skeleton className="h-6 w-48 rounded-full" />
@@ -242,7 +295,7 @@ export function ClarificationPage() {
         >
           {({ values, handleChange, setFieldValue, isSubmitting }) => (
             <Form className="space-y-4">
-              {questions.map((question) => {
+              {questions.map((question, index) => {
                 const currentStatus = String(values[`${question.id}__status`] ?? 'answered') as UserAnswer['answerStatus']
                 const selectedSummary = summarizeSelection(question, values, currentStatus, text.status[currentStatus])
                 const choiceHint =
@@ -259,6 +312,7 @@ export function ClarificationPage() {
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone="neutral">Q{index + 1}</Badge>
                           <Badge tone="gold">P{question.priority}</Badge>
                           <Badge tone="neutral">{choiceHint}</Badge>
                         </div>
@@ -315,7 +369,7 @@ export function ClarificationPage() {
                                 type="button"
                                 aria-pressed={isActive}
                                 onClick={() => {
-                                  void setFieldValue(question.id, option.value)
+                                  void setFieldValue(question.id, isActive ? '' : option.value)
                                   void setFieldValue(`${question.id}__status`, 'answered')
                                 }}
                                 className={`interactive-lift rounded-[20px] border px-4 py-4 text-left text-sm transition ${

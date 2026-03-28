@@ -14,6 +14,12 @@ import { useApiAdapter } from '@/lib/api/use-api-adapter'
 import { exportToCsv } from '@/lib/export/csv'
 import { exportToPdf } from '@/lib/export/pdf'
 
+function stripOpenQuestionsSection(markdown: string) {
+  return markdown
+    .replace(/\n## Open Questions[\s\S]*?(?=\n## |\s*$)/, '')
+    .replace(/\n## 寰呯‘璁ら棶棰[\s\S]*?(?=\n## |\s*$)/, '')
+}
+
 export function ReportPage() {
   const { i18n, t } = useTranslation()
   const navigate = useNavigate()
@@ -33,7 +39,8 @@ export function ReportPage() {
 
   const report = reportQuery.data
   const session = sessionQuery.data
-  const pendingQuestions = session?.questions.filter((question) => !question.answered) ?? []
+  const pendingQuestions: Array<{ answered?: boolean }> = []
+  const reportMarkdown = report ? stripOpenQuestionsSection(report.markdown) : ''
 
   const requestMoreFollowUpMutation = useMutation({
     mutationFn: () => adapter.analysis.requestMoreFollowUp(sessionId),
@@ -198,7 +205,7 @@ export function ReportPage() {
 
           <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
             <Card className="space-y-4 p-6">
-              <ReportMarkdown markdown={report.markdown} />
+              <ReportMarkdown markdown={reportMarkdown} />
             </Card>
 
             <Card className="space-y-4 p-6">

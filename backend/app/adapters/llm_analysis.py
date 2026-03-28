@@ -126,12 +126,6 @@ class MockAnalysisAdapter:
             "Finish the clarification answers before running a real search or calculation pipeline.",
             "Keep orchestration on the backend and let the frontend render only the server response contract.",
         ]
-        open_questions = [
-            question.question_text
-            for question in session.clarification_questions
-            if not question.answered
-        ]
-
         return AnalysisReport(
             summary=(
                 "The backend session loop is operational: it can clarify the problem, plan tasks, "
@@ -139,7 +133,7 @@ class MockAnalysisAdapter:
             ),
             assumptions=assumptions,
             recommendations=recommendations,
-            open_questions=open_questions,
+            open_questions=[],
             chart_refs=[artifact.chart_id for artifact in session.chart_artifacts],
             markdown=(
                 "## Summary\n"
@@ -197,8 +191,8 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                     purpose=str(item.get("purpose", "")).strip() or "Collect the missing decision context.",
                     options=self._string_list(item.get("options")),
                     allow_custom_input=True,
-                    allow_skip=bool(item.get("allow_skip", True)),
-                    priority=max(1, int(item.get("priority", 1) or 1)),
+                    allow_skip=self._coerce_bool(item.get("allow_skip", True), default=True),
+                    priority=self._coerce_priority(item.get("priority", 1)),
                 )
             )
 
@@ -224,7 +218,7 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
         clarification_questions = self._parse_questions(payload.get("clarification_questions"))
         search_tasks = self._parse_search_tasks(payload.get("search_tasks"))
         conclusions = self._parse_conclusions(payload.get("major_conclusions"))
-        ready_for_report = bool(payload.get("ready_for_report", False))
+        ready_for_report = self._coerce_bool(payload.get("ready_for_report", False), default=False)
         reasoning_focus = str(payload.get("reasoning_focus", "")).strip()
         stop_reason = str(payload.get("stop_reason", "")).strip()
 
@@ -281,8 +275,8 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                     or "Collect missing information for the next analysis round.",
                     options=self._string_list(item.get("options")),
                     allow_custom_input=True,
-                    allow_skip=bool(item.get("allow_skip", True)),
-                    priority=max(1, int(item.get("priority", 1) or 1)),
+                    allow_skip=self._coerce_bool(item.get("allow_skip", True), default=True),
+                    priority=self._coerce_priority(item.get("priority", 1)),
                 )
             )
         return parsed
@@ -461,6 +455,59 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
         if not isinstance(value, list):
             return []
         return [str(item).strip() for item in value if str(item).strip()]
+
+    @staticmethod
+    def _coerce_bool(value: Any, *, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "y", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "n", "off", ""}:
+                return False
+        return default
+
+    @staticmethod
+    def _coerce_priority(value: Any, *, default: int = 1) -> int:
+        if isinstance(value, bool):
+            return default
+
+        if isinstance(value, (int, float)):
+            return max(1, int(value))
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if not normalized:
+                return default
+            try:
+                return max(1, int(float(normalized)))
+            except ValueError:
+                priority_aliases = {
+                    "critical": 1,
+                    "highest": 1,
+                    "high": 2,
+                    "medium": 3,
+                    "normal": 3,
+                    "moderate": 3,
+                    "low": 4,
+                    "lowest": 5,
+                    "urgent": 1,
+                    "important": 2,
+                    "一般": 3,
+                    "中": 3,
+                    "中等": 3,
+                    "高": 2,
+                    "较高": 2,
+                    "低": 4,
+                    "较低": 4,
+                    "紧急": 1,
+                }
+                return priority_aliases.get(normalized, default)
+
+        return default
 
     @staticmethod
     def _loads_json_object(content: str) -> dict[str, Any]:

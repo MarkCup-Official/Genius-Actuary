@@ -1,3 +1,4 @@
+import re
 from typing import Protocol
 
 from app.adapters.chart import DisabledChartAdapter, MockChartAdapter
@@ -88,7 +89,10 @@ class AnalysisOrchestrator:
                 session.activity_status = "waiting_for_llm_clarification_questions"
                 self.repository.save(session)
 
-                session.clarification_questions = self.analysis_adapter.generate_initial_questions(session)
+                session.clarification_questions = self._collect_new_questions(
+                    session,
+                    self.analysis_adapter.generate_initial_questions(session),
+                )
                 session.activity_status = "waiting_for_user_clarification_answers"
                 session.current_focus = "Collect the first round of high-value user constraints."
                 session.last_stop_reason = "Waiting for initial clarification answers."
@@ -253,6 +257,36 @@ class AnalysisOrchestrator:
                 session_id,
                 NextAction.COMPLETE,
                 "LLM 调用重试后仍然失败，请检查模型配置或稍后重试。",
+            )
+
+        except Exception as error:
+            session.status = SessionStatus.FAILED
+            session.activity_status = "unexpected_error"
+            session.error_message = str(error)
+            session.events.append(
+                SessionEvent(
+                    kind="orchestrator_unexpected_exception",
+                    payload={
+                        "error_type": type(error).__name__,
+                        "message": session.error_message,
+                    },
+                )
+            )
+            self.repository.save(session)
+            self._write_log(
+                session,
+                action="ORCHESTRATOR_UNEXPECTED_EXCEPTION",
+                summary="An unexpected orchestrator exception was captured and converted into a failed session state.",
+                status="error",
+                metadata={
+                    "error_type": type(error).__name__,
+                    "message": session.error_message or "unknown",
+                },
+            )
+            return self._build_response(
+                session_id,
+                NextAction.COMPLETE,
+                "The session hit an unexpected error while advancing and has been marked as failed.",
             )
 
         session.status = SessionStatus.FAILED
@@ -440,16 +474,16 @@ class AnalysisOrchestrator:
         questions: list[ClarificationQuestion],
     ) -> list[ClarificationQuestion]:
         existing = {
-            AnalysisOrchestrator._normalize_text(question.question_text)
+            AnalysisOrchestrator._question_signature(question)
             for question in session.clarification_questions
         }
         added: list[ClarificationQuestion] = []
         for question in questions:
-            normalized = AnalysisOrchestrator._normalize_text(question.question_text)
-            if not normalized or normalized in existing:
+            signature = AnalysisOrchestrator._question_signature(question)
+            if not signature or signature in existing:
                 continue
             added.append(question)
-            existing.add(normalized)
+            existing.add(signature)
         return added
 
     @staticmethod
@@ -506,4 +540,9 @@ class AnalysisOrchestrator:
 
     @staticmethod
     def _normalize_text(value: str) -> str:
-        return " ".join(value.lower().split())
+        normalized = re.sub(r"[\W_]+", " ", value.lower(), flags=re.UNICODE)
+        return " ".join(normalized.split())
+
+    @staticmethod
+    def _question_signature(question: ClarificationQuestion) -> str:
+        return AnalysisOrchestrator._normalize_text(question.question_text)

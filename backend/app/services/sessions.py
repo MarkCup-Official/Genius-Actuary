@@ -127,8 +127,19 @@ class SessionService:
             return None
 
         answer_summaries: list[dict[str, str]] = []
+        existing_answers_by_question = {
+            existing_answer.question_id: index
+            for index, existing_answer in enumerate(session.answers)
+        }
+
         for answer in answers:
+            existing_index = existing_answers_by_question.get(answer.question_id)
+            if existing_index is not None:
+                continue
+
             session.answers.append(answer)
+            existing_answers_by_question[answer.question_id] = len(session.answers) - 1
+
             answer_summaries.append(
                 {
                     "question_id": answer.question_id,
@@ -144,7 +155,7 @@ class SessionService:
             SessionEvent(
                 kind="answers_recorded",
                 payload={
-                    "count": len(answers),
+                    "count": len(answer_summaries),
                     "answers": answer_summaries,
                     "answered_question_count": len(
                         [question for question in session.clarification_questions if question.answered]
@@ -158,7 +169,7 @@ class SessionService:
             actor=saved.owner_client_id,
             target=session_id,
             ip_address="cookie-session",
-            summary=f"Recorded {len(answers)} clarification answer(s).",
-            metadata={"answer_count": str(len(answers))},
+            summary=f"Recorded {len(answer_summaries)} new clarification answer(s).",
+            metadata={"answer_count": str(len(answer_summaries))},
         )
         return saved
