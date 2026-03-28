@@ -3,9 +3,10 @@ from __future__ import annotations
 from copy import deepcopy
 
 from app.domain.models import AnalysisSession
+from app.persistence.base import SessionRepository
 
 
-class InMemorySessionRepository:
+class InMemorySessionRepository(SessionRepository):
     def __init__(self) -> None:
         self._sessions: dict[str, AnalysisSession] = {}
 

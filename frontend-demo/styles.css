@@ -1,0 +1,254 @@
+:root {
+  --bg: #f3eee3;
+  --paper: #fffaf0;
+  --ink: #1f1a17;
+  --muted: #6f665e;
+  --line: #d7cbbb;
+  --accent: #0f766e;
+  --accent-soft: #d7f2ee;
+  --danger: #b42318;
+  --danger-soft: #fee4e2;
+  --shadow: 0 18px 40px rgba(58, 45, 33, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+    linear-gradient(180deg, #f8f4ea 0%, var(--bg) 100%);
+}
+
+.app-shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 56px;
+}
+
+.hero {
+  margin-bottom: 18px;
+  padding: 28px;
+  border: 1px solid rgba(215, 203, 187, 0.7);
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(255, 250, 240, 0.92), rgba(244, 237, 222, 0.88));
+  box-shadow: var(--shadow);
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(30px, 6vw, 52px);
+  line-height: 1.05;
+}
+
+.hero-copy {
+  max-width: 760px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.panel,
+.question-card,
+.mini-card {
+  border: 1px solid rgba(215, 203, 187, 0.78);
+  background: rgba(255, 250, 240, 0.92);
+  box-shadow: var(--shadow);
+}
+
+.panel {
+  margin-top: 18px;
+  padding: 22px;
+  border-radius: 24px;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.help-text,
+.meta-label,
+.question-purpose {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.field {
+  display: block;
+  margin-top: 14px;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fffdf7;
+  color: var(--ink);
+}
+
+textarea {
+  resize: vertical;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+button {
+  padding: 12px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--ink);
+  color: white;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.inline-meta,
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.inline-meta {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(215, 203, 187, 0.7);
+}
+
+.grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-top: 18px;
+}
+
+.status-pill {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.status-pill.muted {
+  background: #efe6d8;
+  color: var(--muted);
+}
+
+.status-pill.pending {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status-pill.ok {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status-pill.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.question-list,
+.stack-list {
+  display: grid;
+  gap: 12px;
+}
+
+.question-card,
+.mini-card {
+  padding: 16px;
+  border-radius: 18px;
+}
+
+.question-card h3,
+.list-title {
+  margin: 0 0 8px;
+}
+
+.prompt-box,
+.report-box,
+.code-box {
+  margin: 0;
+  padding: 16px;
+  border-radius: 18px;
+  background: #fffdf7;
+  border: 1px solid rgba(215, 203, 187, 0.78);
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+.code-box {
+  max-height: 420px;
+  overflow: auto;
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    width: min(100% - 20px, 1120px);
+    padding-top: 20px;
+  }
+
+  .hero,
+  .panel {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .hero h1 {
+    font-size: 34px;
+  }
+}

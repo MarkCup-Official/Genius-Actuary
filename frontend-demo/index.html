@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Genius Actuary Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <p class="eyebrow">Frontend Demo</p>
+        <h1>Genius Actuary 最小联调页</h1>
+        <p class="hero-copy">
+          这个页面只做一件事：帮我们验证 cookie 隔离、会话创建、追问提交和报告预览。
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>连接设置</h2>
+          <span id="connection-status" class="status-pill muted">未连接</span>
+        </div>
+
+        <label class="field">
+          <span>Backend Base URL</span>
+          <input id="base-url" type="text" value="http://127.0.0.1:8000" />
+        </label>
+
+        <div class="button-row">
+          <button id="bootstrap-btn" type="button">1. 初始化 Cookie</button>
+          <button id="refresh-session-btn" type="button" disabled>刷新当前会话</button>
+        </div>
+
+        <div class="inline-meta">
+          <div>
+            <span class="meta-label">App</span>
+            <strong id="app-name">-</strong>
+          </div>
+          <div>
+            <span class="meta-label">Session ID</span>
+            <strong id="session-id">-</strong>
+          </div>
+          <div>
+            <span class="meta-label">状态</span>
+            <strong id="session-status">-</strong>
+          </div>
+          <div>
+            <span class="meta-label">下一步</span>
+            <strong id="next-action">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>创建会话</h2>
+          <span class="help-text">先点“初始化 Cookie”，再创建会话</span>
+        </div>
+
+        <label class="field">
+          <span>模式</span>
+          <select id="mode-select">
+            <option value="single_decision">single_decision</option>
+            <option value="multi_option">multi_option</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>问题</span>
+          <textarea
+            id="problem-input"
+            rows="4"
+            placeholder="例如：我应该买车，还是继续使用公共交通？"
+          ></textarea>
+        </label>
+
+        <div class="button-row">
+          <button id="create-session-btn" type="button">2. 创建会话</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>追问表单</h2>
+          <span id="question-count" class="help-text">暂无待回答问题</span>
+        </div>
+        <form id="question-form" class="question-list"></form>
+        <div class="button-row">
+          <button id="submit-answers-btn" type="button" disabled>3. 提交答案并继续</button>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>当前提示</h2>
+          </div>
+          <p id="prompt-box" class="prompt-box">等待后端返回下一步动作。</p>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>报告预览</h2>
+          </div>
+          <div id="report-preview" class="report-box">
+            还没有报告预览。
+          </div>
+        </article>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>证据与结论</h2>
+          </div>
+          <div id="evidence-list" class="stack-list"></div>
+          <div id="conclusion-list" class="stack-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>原始返回</h2>
+          </div>
+          <pre id="raw-json" class="code-box">{}</pre>
+        </article>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

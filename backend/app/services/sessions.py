@@ -1,9 +1,9 @@
 from app.domain.models import AnalysisMode, AnalysisSession, SessionEvent, UserAnswer
-from app.persistence.memory import InMemorySessionRepository
+from app.persistence.base import SessionRepository
 
 
 class SessionService:
-    def __init__(self, repository: InMemorySessionRepository) -> None:
+    def __init__(self, repository: SessionRepository) -> None:
         self.repository = repository
 
     def create_session(

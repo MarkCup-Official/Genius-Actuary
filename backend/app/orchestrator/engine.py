@@ -7,13 +7,13 @@ from app.domain.models import (
     SessionStatus,
 )
 from app.domain.schemas import SessionStepResponse
-from app.persistence.memory import InMemorySessionRepository
+from app.persistence.base import SessionRepository
 
 
 class AnalysisOrchestrator:
     def __init__(
         self,
-        repository: InMemorySessionRepository,
+        repository: SessionRepository,
         analysis_adapter: MockAnalysisAdapter,
         search_adapter: MockSearchAdapter,
         chart_adapter: MockChartAdapter,
