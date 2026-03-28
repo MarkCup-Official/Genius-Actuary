@@ -15,6 +15,20 @@
 
 ## 启动方式
 
+最省事的方式是直接在仓库根目录运行：
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\run-demo.ps1
+```
+
+停止：
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\stop-demo.ps1
+```
+
+如果你想手动启动，再按下面方式：
+
 先启动后端：
 
 ```bash
