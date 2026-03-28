@@ -1,0 +1,93 @@
+import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+
+import type {
+  ApiMode,
+  DisplayDensity,
+  LanguageCode,
+  ResolvedTheme,
+  SettingsPayload,
+  ThemeMode,
+  User,
+} from '@/types'
+
+const defaultApiMode = (import.meta.env['VITE_API_MODE'] as ApiMode | undefined) ?? 'mock'
+
+interface AppStoreState {
+  themeMode: ThemeMode
+  resolvedTheme: ResolvedTheme
+  locale: LanguageCode
+  displayDensity: DisplayDensity
+  apiMode: ApiMode
+  sidebarOpen: boolean
+  accessToken: string | null
+  refreshToken: string | null
+  currentUser: User | null
+  setThemeMode: (themeMode: ThemeMode) => void
+  setResolvedTheme: (resolvedTheme: ResolvedTheme) => void
+  setLocale: (locale: LanguageCode) => void
+  setDisplayDensity: (displayDensity: DisplayDensity) => void
+  setApiMode: (apiMode: ApiMode) => void
+  setSidebarOpen: (isOpen: boolean) => void
+  toggleSidebar: () => void
+  setAuthSession: (payload: {
+    accessToken: string
+    refreshToken: string
+    currentUser: User
+  }) => void
+  clearSession: () => void
+  syncFromSettings: (settings: SettingsPayload) => void
+}
+
+export const useAppStore = create<AppStoreState>()(
+  persist(
+    (set) => ({
+      themeMode: 'dark',
+      resolvedTheme: 'dark',
+      locale: 'zh',
+      displayDensity: 'cozy',
+      apiMode: defaultApiMode,
+      sidebarOpen: true,
+      accessToken: null,
+      refreshToken: null,
+      currentUser: null,
+      setThemeMode: (themeMode) => set({ themeMode }),
+      setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
+      setLocale: (locale) => set({ locale }),
+      setDisplayDensity: (displayDensity) => set({ displayDensity }),
+      setApiMode: (apiMode) => set({ apiMode }),
+      setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      setAuthSession: ({ accessToken, refreshToken, currentUser }) =>
+        set({ accessToken, refreshToken, currentUser }),
+      clearSession: () =>
+        set({
+          accessToken: null,
+          refreshToken: null,
+          currentUser: null,
+        }),
+      syncFromSettings: (settings) =>
+        set({
+          themeMode: settings.themeMode,
+          locale: settings.language,
+          displayDensity: settings.displayDensity,
+          apiMode: settings.apiMode,
+        }),
+    }),
+    {
+      name: 'genius-actuary-store',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        themeMode: state.themeMode,
+        resolvedTheme: state.resolvedTheme,
+        locale: state.locale,
+        displayDensity: state.displayDensity,
+        apiMode: state.apiMode,
+        sidebarOpen: state.sidebarOpen,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        currentUser: state.currentUser,
+      }),
+    },
+  ),
+)
