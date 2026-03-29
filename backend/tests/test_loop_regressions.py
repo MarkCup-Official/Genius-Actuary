@@ -11,7 +11,10 @@ from app.domain.models import (
     AnalysisReport,
     AnalysisSession,
     ClarificationQuestion,
+    MajorConclusionItem,
+    EvidenceItem,
     SearchTask,
+    UserAnswer,
 )
 from app.main import create_app
 from app.orchestrator.engine import AnalysisOrchestrator
@@ -19,6 +22,7 @@ from app.persistence.memory import InMemorySessionRepository
 from app.services.audit import AuditLogService
 from app.services.sessions import SessionService
 from app.adapters.llm_analysis import OpenAICompatibleAnalysisAdapter
+from app.prompts.analysis import build_planning_prompts
 
 
 class RepositoryWithAudit(InMemorySessionRepository):
@@ -156,6 +160,131 @@ class PriorityParsingTests(unittest.TestCase):
                 for event in session.events
             )
         )
+
+    def test_plan_next_round_retries_with_compact_prompt_after_timeout(self):
+        adapter = OpenAICompatibleAnalysisAdapter(
+            provider="test",
+            base_url="http://example.com",
+            api_key="test-key",
+            model="test-model",
+            retry_attempts=2,
+            timeout_seconds=5,
+        )
+        session = AnalysisSession(
+            owner_client_id="client-1",
+            mode=AnalysisMode.SINGLE_DECISION,
+            problem_statement="四个人聚餐, 需要多少预算",
+        )
+        session.clarification_questions = [
+            ClarificationQuestion(
+                question_text=f"问题{i}",
+                purpose="用于构造较长的 planning prompt",
+                options=["A", "B", "C", "D", "E"],
+                allow_skip=False,
+                priority=1,
+                question_group="scope",
+                answered=True,
+            )
+            for i in range(10)
+        ]
+        for question in session.clarification_questions:
+            session.answers.append(UserAnswer(question_id=question.question_id, value="这是一个比较长的回答" * 5))
+        session.evidence_items = [
+            EvidenceItem(
+                title=f"evidence-{i}",
+                source_url="https://example.com",
+                source_name="example",
+                summary="很长的证据摘要" * 40,
+                extracted_facts=["事实A" * 30, "事实B" * 30, "事实C" * 30],
+                confidence=0.8,
+            )
+            for i in range(6)
+        ]
+        session.major_conclusions = [
+            MajorConclusionItem(
+                content="很长的结论内容" * 30,
+                conclusion_type="summary",
+                basis_refs=["a", "b", "c"],
+                confidence=0.9,
+            )
+            for _ in range(6)
+        ]
+
+        captured_calls = []
+
+        def fake_request_json(**kwargs):
+            captured_calls.append(kwargs)
+            if len(captured_calls) == 1:
+                raise httpx.ReadTimeout("The read operation timed out")
+            return {"ready_for_report": True, "major_conclusions": []}
+
+        with patch.object(adapter, "_request_json", side_effect=fake_request_json):
+            plan = adapter.plan_next_round(session)
+
+        self.assertTrue(plan.ready_for_report)
+        self.assertEqual(2, len(captured_calls))
+        self.assertGreater(
+            len(captured_calls[0]["user_prompt"]),
+            len(captured_calls[1]["user_prompt"]),
+        )
+        self.assertEqual(5, captured_calls[0]["timeout_seconds"])
+        self.assertEqual(10, captured_calls[1]["timeout_seconds"])
+        self.assertTrue(
+            any(
+                event.kind == "llm_retrying_after_timeout"
+                and event.payload.get("next_prompt_mode") == "compact"
+                for event in session.events
+            )
+        )
+
+
+class PlanningPromptTests(unittest.TestCase):
+    def test_compact_planning_prompt_is_shorter_than_full_prompt(self):
+        session = AnalysisSession(
+            owner_client_id="client-1",
+            mode=AnalysisMode.SINGLE_DECISION,
+            problem_statement="四个人聚餐, 需要多少预算",
+        )
+        session.clarification_questions = [
+            ClarificationQuestion(
+                question_text=f"问题{i}" * 10,
+                purpose="用途" * 20,
+                options=["A", "B", "C", "D", "E"],
+                allow_skip=False,
+                priority=1,
+                question_group="scope",
+                answered=True,
+            )
+            for i in range(10)
+        ]
+        for question in session.clarification_questions:
+            session.answers.append(UserAnswer(question_id=question.question_id, value="回答" * 50))
+        session.evidence_items = [
+            EvidenceItem(
+                title=f"evidence-{i}",
+                source_url="https://example.com",
+                source_name="example",
+                summary="摘要" * 200,
+                extracted_facts=["事实1" * 80, "事实2" * 80, "事实3" * 80],
+                confidence=0.7,
+            )
+            for i in range(8)
+        ]
+        session.major_conclusions = [
+            MajorConclusionItem(
+                content="结论" * 100,
+                conclusion_type="summary",
+                basis_refs=["x", "y"],
+                confidence=0.8,
+            )
+            for _ in range(8)
+        ]
+
+        _, full_prompt = build_planning_prompts(session, compact=False)
+        _, compact_prompt = build_planning_prompts(session, compact=True)
+
+        self.assertLess(len(compact_prompt), len(full_prompt))
+        self.assertIn("context_profile=compact", compact_prompt)
 
 
 class BraveSearchAdapterTests(unittest.TestCase):

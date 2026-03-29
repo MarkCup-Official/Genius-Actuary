@@ -5,6 +5,13 @@ import json
 from app.domain.models import AnalysisMode, AnalysisSession
 
 
+def _trim_text(value: str, limit: int) -> str:
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
 def _mode_name(session: AnalysisSession) -> str:
     if session.mode == AnalysisMode.MULTI_OPTION:
         return "multi_option_decision"
@@ -55,48 +62,60 @@ def build_clarification_prompts(session: AnalysisSession) -> tuple[str, str]:
     return system_prompt, user_prompt
 
 
-def build_planning_prompts(session: AnalysisSession) -> tuple[str, str]:
+def build_planning_prompts(
+    session: AnalysisSession,
+    *,
+    compact: bool = False,
+) -> tuple[str, str]:
     answer_map = {answer.question_id: answer.value for answer in session.answers}
+    asked_limit = 8 if compact else len(session.clarification_questions)
+    answered_limit = 8 if compact else len(session.clarification_questions)
+    evidence_limit = 4 if compact else 8
+    conclusion_limit = 5 if compact else 8
+    fact_limit = 1 if compact else 3
+    summary_limit = 140 if compact else 320
+    conclusion_text_limit = 120 if compact else 240
+
     asked_questions = [
         {
             "question_id": question.question_id,
-            "question_text": question.question_text,
-            "purpose": question.purpose,
-            "options": question.options,
+            "question_text": _trim_text(question.question_text, 80 if compact else 160),
+            "purpose": _trim_text(question.purpose, 80 if compact else 160),
+            "options": question.options[:4] if compact else question.options,
             "answered": question.question_id in answer_map or question.answered,
             "question_group": question.question_group,
         }
-        for question in session.clarification_questions
+        for question in session.clarification_questions[-asked_limit:]
     ]
     answered_questions = [
         {
             "question_id": question.question_id,
-            "question_text": question.question_text,
-            "answer": answer_map[question.question_id],
-            "purpose": question.purpose,
+            "question_text": _trim_text(question.question_text, 80 if compact else 160),
+            "answer": _trim_text(str(answer_map[question.question_id]), 80 if compact else 180),
+            "purpose": _trim_text(question.purpose, 80 if compact else 160),
             "question_group": question.question_group,
         }
         for question in session.clarification_questions
         if question.question_id in answer_map
-    ]
+    ][-answered_limit:]
     evidence_items = [
         {
             "title": item.title,
             "source_name": item.source_name,
-            "summary": item.summary,
-            "facts": item.extracted_facts[:3],
+            "summary": _trim_text(item.summary, summary_limit),
+            "facts": [_trim_text(fact, summary_limit) for fact in item.extracted_facts[:fact_limit]],
             "confidence": item.confidence,
         }
-        for item in session.evidence_items[-8:]
+        for item in session.evidence_items[-evidence_limit:]
     ]
     conclusions = [
         {
-            "content": item.content,
+            "content": _trim_text(item.content, conclusion_text_limit),
             "conclusion_type": item.conclusion_type,
             "basis_refs": item.basis_refs,
             "confidence": item.confidence,
         }
-        for item in session.major_conclusions[-8:]
+        for item in session.major_conclusions[-conclusion_limit:]
     ]
 
     system_prompt = (
@@ -139,6 +158,7 @@ def build_planning_prompts(session: AnalysisSession) -> tuple[str, str]:
         "6. If the current information is sufficient for a bounded recommendation, set ready_for_report=true.\n"
         "7. reasoning_focus should name the single most important unresolved dimension.\n"
         "8. stop_reason should explain why the workflow should pause for user input, run tools, or finish.\n"
+        f"context_profile={'compact' if compact else 'full'}\n"
         f"workflow={_mode_name(session)}\n"
         f"workflow_brief={_mode_brief(session)}\n"
         f"mode_rules={mode_rules}\n"

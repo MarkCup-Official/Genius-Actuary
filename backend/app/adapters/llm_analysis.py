@@ -550,13 +550,14 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
         )
 
     def plan_next_round(self, session: AnalysisSession) -> AnalysisLoopPlan:
-        system_prompt, user_prompt = build_planning_prompts(session)
         return self._request_json_with_retry(
             session=session,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
             operation="plan the next analysis round",
             validator=self._validate_planning_payload,
+            prompt_builder=lambda current_prompt_mode: build_planning_prompts(
+                session,
+                compact=(current_prompt_mode == "compact"),
+            ),
         )
 
     def build_report(self, session: AnalysisSession) -> AnalysisReport:
@@ -837,16 +838,25 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
         self,
         *,
         session: AnalysisSession,
-        system_prompt: str,
-        user_prompt: str,
         operation: str,
         validator: Callable[[dict[str, Any]], T] | None = None,
+        system_prompt: str | None = None,
+        user_prompt: str | None = None,
+        prompt_builder: Callable[[str], tuple[str, str]] | None = None,
     ) -> T | dict[str, Any]:
         last_error: Exception | None = None
-        current_user_prompt = user_prompt
+        current_prompt_mode = "full"
+        if prompt_builder is not None:
+            current_system_prompt, current_user_prompt = prompt_builder(current_prompt_mode)
+        else:
+            if system_prompt is None or user_prompt is None:
+                raise ValueError("system_prompt and user_prompt are required when prompt_builder is absent.")
+            current_system_prompt = system_prompt
+            current_user_prompt = user_prompt
+        current_timeout_seconds = self.timeout_seconds
         for attempt in range(1, self.retry_attempts + 1):
             request_payload = self._build_request_payload(
-                system_prompt=system_prompt,
+                system_prompt=current_system_prompt,
                 user_prompt=current_user_prompt,
             )
             session.events.append(
@@ -858,7 +868,9 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                         "provider": self.provider,
                         "base_url": self.base_url,
                         "model": self.model,
-                        "system_prompt": system_prompt,
+                        "prompt_mode": current_prompt_mode,
+                        "timeout_seconds": current_timeout_seconds,
+                        "system_prompt": current_system_prompt,
                         "user_prompt": current_user_prompt,
                         "request_json": request_payload,
                     },
@@ -869,8 +881,9 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                     session=session,
                     operation=operation,
                     attempt=attempt,
-                    system_prompt=system_prompt,
+                    system_prompt=current_system_prompt,
                     user_prompt=current_user_prompt,
+                    timeout_seconds=current_timeout_seconds,
                 )
                 if validator is None:
                     return payload
@@ -892,7 +905,7 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                     break
                 if isinstance(error, (ValueError, LLMOutputValidationError)):
                     current_user_prompt = self._build_retry_user_prompt(
-                        original_user_prompt=user_prompt,
+                        original_user_prompt=current_user_prompt,
                         error=error,
                     )
                     session.events.append(
@@ -902,6 +915,27 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                                 "operation": operation,
                                 "attempt_completed": attempt,
                                 "next_attempt": attempt + 1,
+                                "error_type": type(error).__name__,
+                                "error_message": str(error),
+                            },
+                        )
+                    )
+                elif isinstance(error, httpx.TimeoutException):
+                    next_prompt_mode = "compact" if prompt_builder is not None else current_prompt_mode
+                    timeout_bumped = max(current_timeout_seconds, self.timeout_seconds * 2)
+                    if prompt_builder is not None:
+                        current_prompt_mode = next_prompt_mode
+                        current_system_prompt, current_user_prompt = prompt_builder(current_prompt_mode)
+                    current_timeout_seconds = timeout_bumped
+                    session.events.append(
+                        SessionEvent(
+                            kind="llm_retrying_after_timeout",
+                            payload={
+                                "operation": operation,
+                                "attempt_completed": attempt,
+                                "next_attempt": attempt + 1,
+                                "next_prompt_mode": current_prompt_mode,
+                                "next_timeout_seconds": current_timeout_seconds,
                                 "error_type": type(error).__name__,
                                 "error_message": str(error),
                             },
@@ -930,6 +964,7 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
         attempt: int,
         system_prompt: str,
         user_prompt: str,
+        timeout_seconds: float,
     ) -> dict[str, Any]:
         request_payload = self._build_request_payload(system_prompt=system_prompt, user_prompt=user_prompt)
         response = httpx.post(
@@ -939,7 +974,7 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                 "Content-Type": "application/json",
             },
             json=request_payload,
-            timeout=self.timeout_seconds,
+            timeout=httpx.Timeout(timeout_seconds, connect=min(timeout_seconds, 10.0)),
         )
         response.raise_for_status()
         payload = response.json()
