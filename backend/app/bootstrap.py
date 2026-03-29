@@ -61,6 +61,7 @@ def _create_search_adapter(settings: Settings) -> MockSearchAdapter | BraveSearc
             ui_language=settings.search_ui_language,
             result_count=settings.search_result_count,
             extra_snippets=settings.search_extra_snippets,
+            retry_attempts=settings.analysis_retry_attempts,
         )
 
     raise RuntimeError(

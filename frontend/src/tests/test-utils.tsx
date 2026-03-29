@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { i18n } from '@/lib/i18n'
 import { useAppStore } from '@/lib/store/app-store'
 import { ThemeProvider } from '@/lib/theme/theme-provider'
+import type { ApiMode, LanguageCode } from '@/types'
 
 function Providers({
   children,
@@ -32,6 +33,8 @@ function Providers({
 }
 
 export function renderWithProviders(ui: ReactElement, route?: string) {
+  const targetRoute = route ?? '/'
+
   useAppStore.setState({
     themeMode: 'dark',
     resolvedTheme: 'dark',
@@ -44,6 +47,34 @@ export function renderWithProviders(ui: ReactElement, route?: string) {
     currentUser: null,
   })
   void i18n.changeLanguage('zh')
+
+  return render(ui, {
+    wrapper: ({ children }) => <Providers route={targetRoute}>{children}</Providers>,
+  })
+}
+
+interface RenderAppOptions {
+  route?: string
+  apiMode?: ApiMode
+  locale?: LanguageCode
+}
+
+export function renderWithAppState(
+  ui: ReactElement,
+  { route = '/', apiMode = 'mock', locale = 'zh' }: RenderAppOptions = {},
+) {
+  useAppStore.setState({
+    themeMode: 'dark',
+    resolvedTheme: 'dark',
+    locale,
+    displayDensity: 'cozy',
+    apiMode,
+    sidebarOpen: true,
+    accessToken: null,
+    refreshToken: null,
+    currentUser: null,
+  })
+  void i18n.changeLanguage(locale)
 
   return render(ui, {
     wrapper: ({ children }) => <Providers route={route}>{children}</Providers>,

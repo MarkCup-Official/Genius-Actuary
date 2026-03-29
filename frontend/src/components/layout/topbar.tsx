@@ -1,4 +1,6 @@
+import { useQuery } from '@tanstack/react-query'
 import {
+  AlertTriangle,
   Languages,
   MoonStar,
   PanelLeftClose,
@@ -7,9 +9,23 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import type { BackendBootstrapResponse } from '@/lib/api/adapters/genius-backend'
+import { apiClient } from '@/lib/api/client'
+import { endpoints } from '@/lib/api/endpoints'
+import { resolveRuntimeApiMode } from '@/lib/api/runtime-mode'
+import { useAppStore } from '@/lib/store/app-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useAppStore } from '@/lib/store/app-store'
+
+function resolveBackendAnalysisAdapter(notes: string[]) {
+  const adapterNote = notes.find((note) => note.startsWith('Adapters:'))
+  if (!adapterNote) {
+    return ''
+  }
+
+  const match = adapterNote.match(/analysis=([^,]+)/i)
+  return match?.[1]?.trim().toLowerCase() ?? ''
+}
 
 export function Topbar() {
   const { i18n, t } = useTranslation()
@@ -20,7 +36,32 @@ export function Topbar() {
   const setThemeMode = useAppStore((state) => state.setThemeMode)
   const locale = useAppStore((state) => state.locale)
   const setLocale = useAppStore((state) => state.setLocale)
+  const apiMode = useAppStore((state) => state.apiMode)
   const isZh = i18n.language.startsWith('zh')
+  const runtimeApiMode = resolveRuntimeApiMode(apiMode)
+
+  const bootstrapQuery = useQuery({
+    queryKey: ['backend', 'bootstrap', 'runtime-indicator'],
+    queryFn: () =>
+      apiClient.request<BackendBootstrapResponse>(endpoints.backend.bootstrap),
+    enabled: runtimeApiMode === 'rest',
+    staleTime: 60_000,
+    retry: false,
+  })
+
+  const backendAnalysisAdapter = resolveBackendAnalysisAdapter(
+    bootstrapQuery.data?.notes ?? [],
+  )
+  const shouldShowMockHint =
+    runtimeApiMode === 'mock' || backendAnalysisAdapter.startsWith('mock')
+  const mockHint =
+    runtimeApiMode === 'mock'
+      ? isZh
+        ? '\u5f53\u524d\u524d\u7aef\u6b63\u5728\u4f7f\u7528 Mock \u9002\u914d\u5668\uff0c\u9875\u9762\u5185\u5bb9\u4e0d\u662f\u5b9e\u65f6\u540e\u7aef LLM \u7ed3\u679c\u3002'
+        : 'The frontend is currently using the mock adapter instead of the live backend LLM.'
+      : isZh
+        ? '\u5f53\u524d\u540e\u7aef\u5206\u6790\u9002\u914d\u5668\u4e3a Mock\uff0c\u9875\u9762\u5185\u5bb9\u4e0d\u4f1a\u8d70\u771f\u5b9e LLM\u3002'
+        : 'The backend analysis adapter is currently mock, so this is not a live LLM run.'
 
   const themeLabel =
     themeMode === 'dark'
@@ -38,15 +79,17 @@ export function Topbar() {
   })
 
   const languageOptions = [
-    { value: 'zh' as const, label: '中文' },
+    { value: 'zh' as const, label: '\u4e2d\u6587' },
     { value: 'en' as const, label: 'EN' },
   ]
-  const workspaceEyebrow = isZh ? '当前工作区' : 'Workspace'
-  const workspaceTitle = isZh ? '个人决策分析' : 'Personal Decision Analysis'
+  const workspaceEyebrow = isZh ? '\u5206\u6790\u5de5\u4f5c\u53f0' : 'Workspace'
+  const workspaceTitle =
+    isZh ? '\u4e2a\u4eba\u51b3\u7b56\u5206\u6790' : 'Personal Decision Analysis'
   const workspaceDescription = isZh
-    ? '围绕复杂选择发起分析、继续追问，并随时回看历史分析记录。'
+    ? '\u53d1\u8d77\u65b0\u7684\u5206\u6790\u3001\u7ee7\u7eed\u56de\u7b54\u8ffd\u95ee\uff0c\u5e76\u968f\u65f6\u56de\u770b\u5386\u53f2\u5206\u6790\u8bb0\u5f55\u3002'
     : 'Start new analyses, continue follow-ups, and revisit your analysis history at any time.'
-  const workspaceBadge = isZh ? '当前浏览器已绑定' : 'Bound to this browser'
+  const workspaceBadge =
+    isZh ? '\u5f53\u524d\u6d4f\u89c8\u5668\u5df2\u7ed1\u5b9a' : 'Bound to this browser'
 
   return (
     <header className="panel-card mb-6 p-5">
@@ -85,6 +128,13 @@ export function Topbar() {
             <p className="text-text-secondary max-w-[44rem] text-sm leading-6">
               {workspaceDescription}
             </p>
+
+            {shouldShowMockHint ? (
+              <div className="border-border-strong mt-1 flex max-w-[48rem] items-start gap-3 rounded-[18px] border bg-[rgba(212,175,55,0.08)] px-4 py-3 text-sm leading-6 text-text-secondary">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-gold-primary" />
+                <span>{mockHint}</span>
+              </div>
+            ) : null}
           </div>
         </div>
 

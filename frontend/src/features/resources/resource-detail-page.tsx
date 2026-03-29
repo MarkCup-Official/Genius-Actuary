@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -6,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { getAnalysisSessionPath } from '@/lib/analysis/session-path'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
 import { getResourceDefinition } from '@/lib/registry/resource-registry'
 
@@ -49,6 +51,16 @@ export function ResourceDetailPage() {
   }
 
   const record = recordQuery.data
+
+  useEffect(() => {
+    if (!isHistoryPage || !record) {
+      return
+    }
+
+    void navigate(getAnalysisSessionPath(record.id, String(record.status ?? '')), {
+      replace: true,
+    })
+  }, [isHistoryPage, navigate, record])
 
   return (
     <div className="space-y-6">

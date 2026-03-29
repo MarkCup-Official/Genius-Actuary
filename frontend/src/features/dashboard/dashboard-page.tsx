@@ -10,6 +10,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
+import {
+  getAnalysisSessionPath,
+  isResultSessionStatus,
+} from '@/lib/analysis/session-path'
 import { formatDateTime } from '@/lib/utils/format'
 import { useAppStore } from '@/lib/store/app-store'
 import type { ActivityItem, ChartArtifact, DashboardMetric } from '@/types'
@@ -157,7 +161,7 @@ export function DashboardPage() {
 
             <div className="space-y-3">
               {dashboard?.recentSessions.map((session) => {
-                const isCompleted = session.status === 'COMPLETED'
+                const isCompleted = isResultSessionStatus(session.status)
                 const sessionModeLabel = session.mode === 'single-option' ? t('analysis.singleMode') : t('analysis.multiMode')
                 const actionLabel = isCompleted ? t('dashboard.openReport') : t('dashboard.continueAnalysis')
 
@@ -166,9 +170,7 @@ export function DashboardPage() {
                     key={session.id}
                     type="button"
                     onClick={() =>
-                      void navigate(
-                        isCompleted ? `/analysis/session/${session.id}/report` : `/analysis/session/${session.id}/clarify`,
-                      )
+                      void navigate(getAnalysisSessionPath(session.id, session.status))
                     }
                     className="w-full rounded-[22px] border border-border-subtle bg-app-bg-elevated p-4 text-left transition hover:border-border-strong hover:bg-panel-strong"
                   >

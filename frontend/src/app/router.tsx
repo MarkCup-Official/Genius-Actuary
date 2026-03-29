@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Suspense, lazy, type ReactNode } from 'react'
-import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { createBrowserRouter, Navigate, useParams } from 'react-router-dom'
 
 import { Skeleton } from '@/components/feedback/skeleton'
 import { AppShell } from '@/components/layout/app-shell'
@@ -92,6 +92,20 @@ function withRouteSuspense(element: ReactNode) {
   return <Suspense fallback={<RouteFallback />}>{element}</Suspense>
 }
 
+function LegacyAnalysisSessionRedirect({
+  target,
+}: {
+  target: 'session' | 'result'
+}) {
+  const { sessionId = '' } = useParams()
+  const path =
+    target === 'result'
+      ? `/analysis/session/${sessionId}/result`
+      : `/analysis/session/${sessionId}`
+
+  return <Navigate to={path} replace />
+}
+
 export const router = createBrowserRouter([
   {
     path: '/login',
@@ -122,15 +136,15 @@ export const router = createBrowserRouter([
           },
           {
             path: '/analysis/session/:sessionId/clarify',
-            element: <Navigate to=".." replace />,
+            element: <LegacyAnalysisSessionRedirect target="session" />,
           },
           {
             path: '/analysis/session/:sessionId/progress',
-            element: <Navigate to=".." replace />,
+            element: <LegacyAnalysisSessionRedirect target="session" />,
           },
           {
             path: '/analysis/session/:sessionId/report',
-            element: <Navigate to="../result" replace />,
+            element: <LegacyAnalysisSessionRedirect target="result" />,
           },
           {
             path: '/analysis/session/:sessionId/result',

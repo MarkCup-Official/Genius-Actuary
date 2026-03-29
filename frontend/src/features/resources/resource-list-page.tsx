@@ -7,6 +7,10 @@ import { DataTable } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
+import {
+  getAnalysisSessionPath,
+  isResultSessionStatus,
+} from '@/lib/analysis/session-path'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
 import { getResourceDefinition } from '@/lib/registry/resource-registry'
 import { formatDateTime } from '@/lib/utils/format'
@@ -52,9 +56,7 @@ export function ResourceListPage() {
 
   const getOpenPath = (record: ResourceRecord) =>
     resourceKey === 'analyses'
-      ? record.status === 'COMPLETED'
-        ? `/analysis/session/${record.id}/report`
-        : `/analysis/session/${record.id}/clarify`
+      ? getAnalysisSessionPath(record.id, String(record.status ?? ''))
       : `/resources/${resourceKey}/${record.id}`
 
   const columns: ColumnDef<ResourceRecord>[] = definition
@@ -77,7 +79,8 @@ export function ResourceListPage() {
                 size="sm"
                 onClick={() => void navigate(getOpenPath(row.original))}
               >
-                {isHistoryPage && row.original.status === 'COMPLETED'
+                {isHistoryPage &&
+                isResultSessionStatus(String(row.original.status ?? ''))
                   ? text.viewResult
                   : isHistoryPage
                     ? text.continueAnalysis

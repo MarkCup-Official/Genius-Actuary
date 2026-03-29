@@ -107,7 +107,7 @@ class Settings:
             analysis_api_key=os.getenv("ANALYSIS_API_KEY") or None,
             analysis_model=os.getenv("ANALYSIS_MODEL", "MiniMax-M2.5"),
             analysis_timeout_seconds=float(os.getenv("ANALYSIS_TIMEOUT_SECONDS", "30")),
-            analysis_retry_attempts=max(1, int(os.getenv("ANALYSIS_RETRY_ATTEMPTS", "3"))),
+            analysis_retry_attempts=max(1, int(os.getenv("ANALYSIS_RETRY_ATTEMPTS", "4"))),
             clarification_follow_up_round_limit=max(
                 1,
                 int(os.getenv("CLARIFICATION_FOLLOW_UP_ROUND_LIMIT", "10")),

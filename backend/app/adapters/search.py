@@ -40,6 +40,7 @@ class BraveSearchAdapter:
         result_count: int,
         extra_snippets: bool,
         timeout_seconds: float = 30,
+        retry_attempts: int = 3,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -49,15 +50,37 @@ class BraveSearchAdapter:
         self.result_count = result_count
         self.extra_snippets = extra_snippets
         self.timeout_seconds = timeout_seconds
+        self.retry_attempts = max(1, retry_attempts)
 
     def run(self, tasks: list[SearchTask]) -> list[EvidenceItem]:
         evidence: list[EvidenceItem] = []
         for task in tasks:
             query = self._pick_query(task)
-            response_items = self._search(query, task)
+            task.status = "running"
+            response_items = self._search_with_retry(query, task)
             evidence.extend(response_items)
-            task.status = "completed"
         return evidence
+
+    def _search_with_retry(self, query: str, task: SearchTask) -> list[EvidenceItem]:
+        last_error: Exception | None = None
+        for _ in range(self.retry_attempts):
+            try:
+                response_items = self._search(query, task)
+                task.status = "completed"
+                return response_items
+            except httpx.HTTPError as error:
+                last_error = error
+            except Exception as error:  # pragma: no cover - defensive fallback
+                last_error = error
+
+        task.status = "failed"
+        detail = str(last_error) if last_error else "Unknown search adapter error."
+        note = (
+            f"Search failed after {self.retry_attempts} attempts: "
+            f"{type(last_error).__name__ if last_error else 'UnknownError'} - {detail}"
+        )
+        task.notes = f"{task.notes}\n{note}".strip() if task.notes else note
+        return []
 
     def _pick_query(self, task: SearchTask) -> str:
         for query in task.suggested_queries:

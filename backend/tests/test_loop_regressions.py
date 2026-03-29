@@ -1,10 +1,18 @@
 import unittest
 from unittest.mock import patch
 
+import httpx
 from fastapi.testclient import TestClient
 
+from app.adapters.search import BraveSearchAdapter
 from app.bootstrap import AppServices
-from app.domain.models import AnalysisMode, AnalysisReport, AnalysisSession, ClarificationQuestion
+from app.domain.models import (
+    AnalysisMode,
+    AnalysisReport,
+    AnalysisSession,
+    ClarificationQuestion,
+    SearchTask,
+)
 from app.main import create_app
 from app.orchestrator.engine import AnalysisOrchestrator
 from app.persistence.memory import InMemorySessionRepository
@@ -106,6 +114,78 @@ class PriorityParsingTests(unittest.TestCase):
         self.assertEqual(1, len(questions))
         self.assertFalse(questions[0].allow_skip)
         self.assertEqual(1, questions[0].priority)
+
+    def test_generate_initial_questions_retries_when_first_payload_is_invalid(self):
+        adapter = OpenAICompatibleAnalysisAdapter(
+            provider="test",
+            base_url="http://example.com",
+            api_key="test-key",
+            model="test-model",
+            retry_attempts=2,
+        )
+        session = AnalysisSession(
+            owner_client_id="client-1",
+            mode=AnalysisMode.SINGLE_DECISION,
+            problem_statement="Estimate the budget for a student competition.",
+        )
+
+        with patch.object(
+            adapter,
+            "_request_json",
+            side_effect=[
+                {"questions": []},
+                {
+                    "questions": [
+                        {
+                            "question_text": "What is the target audience size?",
+                            "purpose": "Estimate venue and staffing needs.",
+                            "options": ["100", "300", "500"],
+                            "priority": 1,
+                        }
+                    ]
+                },
+            ],
+        ) as request_mock:
+            questions = adapter.generate_initial_questions(session)
+
+        self.assertEqual(2, request_mock.call_count)
+        self.assertEqual(1, len(questions))
+        self.assertTrue(
+            any(
+                event.kind == "llm_retrying_after_invalid_output"
+                for event in session.events
+            )
+        )
+
+
+class BraveSearchAdapterTests(unittest.TestCase):
+    def test_brave_search_adapter_marks_task_failed_after_connect_errors(self):
+        adapter = BraveSearchAdapter(
+            base_url="https://api.search.brave.com/res/v1/web/search",
+            api_key="test-key",
+            country="CN",
+            search_language="zh-hans",
+            ui_language="zh-CN",
+            result_count=3,
+            extra_snippets=True,
+            retry_attempts=2,
+        )
+        task = SearchTask(
+            search_topic="高校场地租赁价格",
+            search_goal="获取一线城市高校场地报价",
+            search_scope="2024-2025 公开网页",
+        )
+
+        with patch(
+            "app.adapters.search.httpx.get",
+            side_effect=httpx.ConnectError("EOF occurred in violation of protocol"),
+        ) as get_mock:
+            evidence = adapter.run([task])
+
+        self.assertEqual([], evidence)
+        self.assertEqual("failed", task.status)
+        self.assertEqual(2, get_mock.call_count)
+        self.assertIn("Search failed after 2 attempts", task.notes)
 
 
 class SessionStepHttpTests(unittest.TestCase):

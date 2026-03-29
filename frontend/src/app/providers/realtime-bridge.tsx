@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { type PropsWithChildren, useEffect } from 'react'
 
+import { resolveRuntimeApiMode } from '@/lib/api/runtime-mode'
 import { subscribeToRealtime } from '@/lib/realtime/realtime-client'
 import { useAppStore } from '@/lib/store/app-store'
 import type { RealtimeEvent } from '@/types'
@@ -31,8 +32,15 @@ function handleRealtimeEvent(queryClient: ReturnType<typeof useQueryClient>, eve
 export function RealtimeBridge({ children }: PropsWithChildren) {
   const queryClient = useQueryClient()
   const apiMode = useAppStore((state) => state.apiMode)
+  const runtimeApiMode = resolveRuntimeApiMode(apiMode)
 
-  useEffect(() => subscribeToRealtime(apiMode, (event) => handleRealtimeEvent(queryClient, event)), [apiMode, queryClient])
+  useEffect(
+    () =>
+      subscribeToRealtime(runtimeApiMode, (event) =>
+        handleRealtimeEvent(queryClient, event),
+      ),
+    [queryClient, runtimeApiMode],
+  )
 
   return children
 }

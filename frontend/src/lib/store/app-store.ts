@@ -10,9 +10,11 @@ import type {
   ThemeMode,
   User,
 } from '@/types'
+import { resolveRuntimeApiMode } from '@/lib/api/runtime-mode'
 
-const defaultApiMode =
-  (import.meta.env['VITE_API_MODE'] as ApiMode | undefined) ?? 'mock'
+const defaultApiMode = resolveRuntimeApiMode(
+  import.meta.env['VITE_API_MODE'] as ApiMode | undefined,
+)
 
 interface AppStoreState {
   themeMode: ThemeMode
@@ -56,7 +58,8 @@ export const useAppStore = create<AppStoreState>()(
       setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
       setLocale: (locale) => set({ locale }),
       setDisplayDensity: (displayDensity) => set({ displayDensity }),
-      setApiMode: (apiMode) => set({ apiMode }),
+      setApiMode: (apiMode) =>
+        set({ apiMode: resolveRuntimeApiMode(apiMode) }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       toggleSidebar: () =>
         set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -77,6 +80,17 @@ export const useAppStore = create<AppStoreState>()(
     {
       name: 'genius-actuary-store',
       storage: createJSONStorage(() => localStorage),
+      merge: (persistedState, currentState) => {
+        const merged = {
+          ...currentState,
+          ...(persistedState as Partial<AppStoreState>),
+        }
+
+        return {
+          ...merged,
+          apiMode: resolveRuntimeApiMode(merged.apiMode),
+        }
+      },
       partialize: (state) => ({
         themeMode: state.themeMode,
         resolvedTheme: state.resolvedTheme,

@@ -243,6 +243,12 @@ class AnalysisOrchestrator:
                 kind="mcp_round_completed",
                 payload={
                     "evidence_count": len(session.evidence_items),
+                    "completed_search_count": len(
+                        [task for task in pending_search_tasks if task.status == "completed"]
+                    ),
+                    "failed_search_count": len(
+                        [task for task in pending_search_tasks if task.status == "failed"]
+                    ),
                     "completed_calculation_count": len(
                         [task for task in pending_calculation_tasks if task.status == "completed"]
                     ),

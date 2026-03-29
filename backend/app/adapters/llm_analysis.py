@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import httpx
 
@@ -514,6 +514,13 @@ class LLMInvocationError(RuntimeError):
     pass
 
 
+class LLMOutputValidationError(ValueError):
+    pass
+
+
+T = TypeVar("T")
+
+
 class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
     def __init__(
         self,
@@ -534,27 +541,46 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
 
     def generate_initial_questions(self, session: AnalysisSession) -> list[ClarificationQuestion]:
         system_prompt, user_prompt = build_clarification_prompts(session)
-        payload = self._request_json_with_retry(
+        return self._request_json_with_retry(
             session=session,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             operation="generate clarification questions",
+            validator=self._validate_initial_questions_payload,
         )
-        questions = self._parse_questions(payload.get("questions"))
-        if not questions:
-            raise LLMInvocationError(
-                "Failed to generate clarification questions because the response payload was invalid."
-            )
-        return questions
 
     def plan_next_round(self, session: AnalysisSession) -> AnalysisLoopPlan:
         system_prompt, user_prompt = build_planning_prompts(session)
-        payload = self._request_json_with_retry(
+        return self._request_json_with_retry(
             session=session,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             operation="plan the next analysis round",
+            validator=self._validate_planning_payload,
         )
+
+    def build_report(self, session: AnalysisSession) -> AnalysisReport:
+        system_prompt, user_prompt = build_reporting_prompts(session)
+        return self._request_json_with_retry(
+            session=session,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            operation="build the final report",
+            validator=lambda payload: self._validate_report_payload(session, payload),
+        )
+
+    def _validate_initial_questions_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> list[ClarificationQuestion]:
+        questions = self._parse_questions(payload.get("questions"))
+        if not questions:
+            raise LLMOutputValidationError(
+                "The response did not contain usable clarification questions."
+            )
+        return questions
+
+    def _validate_planning_payload(self, payload: dict[str, Any]) -> AnalysisLoopPlan:
         clarification_questions = self._parse_questions(payload.get("clarification_questions"))
         search_tasks = self._parse_search_tasks(payload.get("search_tasks"))
         calculation_tasks = self._parse_calculation_tasks(payload.get("calculation_tasks"))
@@ -572,8 +598,8 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
             or conclusions
             or ready_for_report
         ):
-            raise LLMInvocationError(
-                "Failed to plan the next analysis round because the response payload was invalid."
+            raise LLMOutputValidationError(
+                "The response did not contain any usable questions, tasks, conclusions, or report readiness signal."
             )
 
         return AnalysisLoopPlan(
@@ -587,18 +613,15 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
             stop_reason=stop_reason,
         )
 
-    def build_report(self, session: AnalysisSession) -> AnalysisReport:
-        system_prompt, user_prompt = build_reporting_prompts(session)
-        payload = self._request_json_with_retry(
-            session=session,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            operation="build the final report",
-        )
+    def _validate_report_payload(
+        self,
+        session: AnalysisSession,
+        payload: dict[str, Any],
+    ) -> AnalysisReport:
         summary = str(payload.get("summary", "")).strip()
         if not summary:
-            raise LLMInvocationError(
-                "Failed to build the final report because the response did not include a summary."
+            raise LLMOutputValidationError(
+                "The report response did not include a summary."
             )
 
         report = AnalysisReport(
@@ -612,9 +635,17 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
         )
         if session.mode == AnalysisMode.MULTI_OPTION:
             report.option_profiles = self._parse_option_profiles(payload.get("option_profiles"))
+            if not report.option_profiles and not report.tables:
+                raise LLMOutputValidationError(
+                    "The multi-option report response did not include usable option comparisons."
+                )
         else:
             report.budget_summary = self._parse_budget_summary(payload.get("budget_summary"))
             report.budget_items = self._parse_budget_items(payload.get("budget_items"))
+            if report.budget_summary is None and not report.budget_items and not report.tables:
+                raise LLMOutputValidationError(
+                    "The budget report response did not include a usable budget summary, budget items, or tables."
+                )
         return report
 
     def _parse_questions(self, value: Any) -> list[ClarificationQuestion]:
@@ -809,10 +840,15 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
         system_prompt: str,
         user_prompt: str,
         operation: str,
-    ) -> dict[str, Any]:
+        validator: Callable[[dict[str, Any]], T] | None = None,
+    ) -> T | dict[str, Any]:
         last_error: Exception | None = None
+        current_user_prompt = user_prompt
         for attempt in range(1, self.retry_attempts + 1):
-            request_payload = self._build_request_payload(system_prompt=system_prompt, user_prompt=user_prompt)
+            request_payload = self._build_request_payload(
+                system_prompt=system_prompt,
+                user_prompt=current_user_prompt,
+            )
             session.events.append(
                 SessionEvent(
                     kind="llm_request_started",
@@ -823,19 +859,22 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                         "base_url": self.base_url,
                         "model": self.model,
                         "system_prompt": system_prompt,
-                        "user_prompt": user_prompt,
+                        "user_prompt": current_user_prompt,
                         "request_json": request_payload,
                     },
                 )
             )
             try:
-                return self._request_json(
+                payload = self._request_json(
                     session=session,
                     operation=operation,
                     attempt=attempt,
                     system_prompt=system_prompt,
-                    user_prompt=user_prompt,
+                    user_prompt=current_user_prompt,
                 )
+                if validator is None:
+                    return payload
+                return validator(payload)
             except Exception as error:
                 last_error = error
                 session.events.append(
@@ -851,10 +890,37 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                 )
                 if attempt == self.retry_attempts:
                     break
+                if isinstance(error, (ValueError, LLMOutputValidationError)):
+                    current_user_prompt = self._build_retry_user_prompt(
+                        original_user_prompt=user_prompt,
+                        error=error,
+                    )
+                    session.events.append(
+                        SessionEvent(
+                            kind="llm_retrying_after_invalid_output",
+                            payload={
+                                "operation": operation,
+                                "attempt_completed": attempt,
+                                "next_attempt": attempt + 1,
+                                "error_type": type(error).__name__,
+                                "error_message": str(error),
+                            },
+                        )
+                    )
         detail = str(last_error) if last_error else "Unknown LLM invocation error."
         raise LLMInvocationError(
             f"Failed to {operation} after {self.retry_attempts} attempts. Last error: {detail}"
         ) from last_error
+
+    @staticmethod
+    def _build_retry_user_prompt(*, original_user_prompt: str, error: Exception) -> str:
+        return (
+            f"{original_user_prompt}\n\n"
+            "The previous answer could not be used.\n"
+            "Retry now and return exactly one valid JSON object that matches the requested schema.\n"
+            "Do not include prose, markdown fences, comments, <think> tags, or duplicate keys.\n"
+            f"Validation issue: {error}"
+        )
 
     def _request_json(
         self,
