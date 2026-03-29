@@ -117,6 +117,9 @@ export interface ClarificationQuestion {
   sessionId: string
   question: string
   purpose: string
+  questionGroup?: string
+  inputHint?: string
+  exampleAnswer?: string
   fieldType: ClarificationFieldType
   options?: ClarificationOption[]
   allowCustomInput: boolean
@@ -148,6 +151,8 @@ export interface SearchTask {
   requiredFields: string[]
   freshnessRequirement: 'standard' | 'high'
   status: 'pending' | 'running' | 'completed'
+  taskGroup?: string
+  notes?: string
 }
 
 export interface EvidenceItem {
@@ -172,7 +177,21 @@ export interface CalculationTask {
   units: string
   result: string
   errorMargin?: string
+  notes?: string
+  status?: string
   createdAt: string
+}
+
+export interface ChartTask {
+  id: string
+  sessionId: string
+  objective: string
+  chartType: ChartKind
+  title: string
+  preferredUnit?: string
+  sourceTaskIds?: string[]
+  notes?: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
 }
 
 export interface MajorConclusionItem {
@@ -229,6 +248,60 @@ export interface ChartArtifact {
   heatmapSeries?: HeatmapDatum[]
 }
 
+export interface BudgetLineItem {
+  id: string
+  name: string
+  category: string
+  itemType: 'cost' | 'income' | 'opportunity_cost' | string
+  low: number
+  base: number
+  high: number
+  currency: string
+  rationale?: string
+  basisRefs: string[]
+  confidence: number
+}
+
+export interface BudgetSummary {
+  currency: string
+  totalCostLow: number
+  totalCostBase: number
+  totalCostHigh: number
+  totalIncomeLow: number
+  totalIncomeBase: number
+  totalIncomeHigh: number
+  netLow: number
+  netBase: number
+  netHigh: number
+  reserveNote?: string
+}
+
+export interface OptionProfile {
+  id: string
+  name: string
+  summary: string
+  pros: string[]
+  cons: string[]
+  conditions: string[]
+  fitFor: string[]
+  cautionFlags: string[]
+  estimatedCostLow?: number
+  estimatedCostBase?: number
+  estimatedCostHigh?: number
+  currency: string
+  score?: number
+  confidence: number
+  basisRefs: string[]
+}
+
+export interface ReportTable {
+  id: string
+  title: string
+  columns: string[]
+  rows: Array<Record<string, string | number | null>>
+  notes?: string
+}
+
 export interface AnalysisReport {
   id: string
   sessionId: string
@@ -241,6 +314,10 @@ export interface AnalysisReport {
   evidence: EvidenceItem[]
   assumptions: string[]
   disclaimers: string[]
+  budgetSummary?: BudgetSummary
+  budgetItems?: BudgetLineItem[]
+  optionProfiles?: OptionProfile[]
+  tables?: ReportTable[]
   exportedAt?: string
 }
 
@@ -257,7 +334,16 @@ export interface AnalysisProgress {
   overallProgress: number
   currentStepLabel: string
   errorMessage?: string
+  nextAction?: 'ask_user' | 'run_mcp' | 'preview_report' | 'complete'
+  activityStatus?: string
+  currentFocus?: string
+  lastStopReason?: string
   stages: AnalysisStage[]
+  pendingQuestions?: ClarificationQuestion[]
+  pendingSearchTasks?: SearchTask[]
+  pendingCalculationTasks?: CalculationTask[]
+  pendingChartTasks?: ChartTask[]
+  chartArtifacts?: ChartArtifact[]
 }
 
 export interface AnalysisSessionSummary {
@@ -277,12 +363,17 @@ export interface AnalysisSession extends AnalysisSessionSummary {
   followUpExtensionsUsed?: number
   followUpBudgetExhausted?: boolean
   deferredFollowUpQuestionCount?: number
+  activityStatus?: string
+  currentFocus?: string
+  lastStopReason?: string
   questions: ClarificationQuestion[]
   answers: UserAnswer[]
   searchTasks: SearchTask[]
   evidence: EvidenceItem[]
   conclusions: MajorConclusionItem[]
   calculations: CalculationTask[]
+  chartTasks?: ChartTask[]
+  chartArtifacts?: ChartArtifact[]
 }
 
 export interface DashboardMetric {

@@ -18,24 +18,9 @@ const ModeSelectionPage = lazy(() =>
     default: module.ModeSelectionPage,
   })),
 )
-const ProblemInputPage = lazy(() =>
-  import('@/features/analysis/pages/problem-input-page').then((module) => ({
-    default: module.ProblemInputPage,
-  })),
-)
 const AnalysisSessionPage = lazy(() =>
   import('@/features/analysis/pages/analysis-session-page').then((module) => ({
     default: module.AnalysisSessionPage,
-  })),
-)
-const ClarificationPage = lazy(() =>
-  import('@/features/analysis/pages/clarification-page').then((module) => ({
-    default: module.ClarificationPage,
-  })),
-)
-const ProgressPage = lazy(() =>
-  import('@/features/analysis/pages/progress-page').then((module) => ({
-    default: module.ProgressPage,
   })),
 )
 const ReportPage = lazy(() =>
@@ -129,7 +114,7 @@ export const router = createBrowserRouter([
           },
           {
             path: '/analysis/intake',
-            element: withRouteSuspense(<ProblemInputPage />),
+            element: <Navigate to="/analysis/modes" replace />,
           },
           {
             path: '/analysis/session/:sessionId',
@@ -137,14 +122,18 @@ export const router = createBrowserRouter([
           },
           {
             path: '/analysis/session/:sessionId/clarify',
-            element: withRouteSuspense(<ClarificationPage />),
+            element: <Navigate to=".." replace />,
           },
           {
             path: '/analysis/session/:sessionId/progress',
-            element: withRouteSuspense(<ProgressPage />),
+            element: <Navigate to=".." replace />,
           },
           {
             path: '/analysis/session/:sessionId/report',
+            element: <Navigate to="../result" replace />,
+          },
+          {
+            path: '/analysis/session/:sessionId/result',
             element: withRouteSuspense(<ReportPage />),
           },
           { path: '/settings', element: withRouteSuspense(<SettingsPage />) },

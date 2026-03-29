@@ -43,6 +43,9 @@ class ClarificationQuestion(BaseModel):
     allow_skip: bool = True
     priority: int = 1
     answered: bool = False
+    question_group: str = ""
+    input_hint: str = ""
+    example_answer: str = ""
 
 
 class UserAnswer(BaseModel):
@@ -61,6 +64,8 @@ class SearchTask(BaseModel):
     required_fields: list[str] = Field(default_factory=list)
     freshness_requirement: str = "medium"
     status: str = "pending"
+    task_group: str = ""
+    notes: str = ""
 
 
 class CalculationTask(BaseModel):
@@ -115,6 +120,60 @@ class MajorConclusionItem(BaseModel):
     confidence: float = 0.5
 
 
+class BudgetLineItem(BaseModel):
+    line_item_id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    category: str
+    item_type: str = "cost"
+    low: float = 0.0
+    base: float = 0.0
+    high: float = 0.0
+    currency: str = "CNY"
+    rationale: str = ""
+    basis_refs: list[str] = Field(default_factory=list)
+    confidence: float = 0.5
+
+
+class BudgetSummary(BaseModel):
+    currency: str = "CNY"
+    total_cost_low: float = 0.0
+    total_cost_base: float = 0.0
+    total_cost_high: float = 0.0
+    total_income_low: float = 0.0
+    total_income_base: float = 0.0
+    total_income_high: float = 0.0
+    net_low: float = 0.0
+    net_base: float = 0.0
+    net_high: float = 0.0
+    reserve_note: str = ""
+
+
+class OptionProfile(BaseModel):
+    option_id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    summary: str = ""
+    pros: list[str] = Field(default_factory=list)
+    cons: list[str] = Field(default_factory=list)
+    conditions: list[str] = Field(default_factory=list)
+    fit_for: list[str] = Field(default_factory=list)
+    caution_flags: list[str] = Field(default_factory=list)
+    estimated_cost_low: float | None = None
+    estimated_cost_base: float | None = None
+    estimated_cost_high: float | None = None
+    currency: str = "CNY"
+    score: float | None = None
+    confidence: float = 0.5
+    basis_refs: list[str] = Field(default_factory=list)
+
+
+class ReportTable(BaseModel):
+    table_id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str
+    columns: list[str] = Field(default_factory=list)
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    notes: str = ""
+
+
 class AnalysisLoopPlan(BaseModel):
     clarification_questions: list[ClarificationQuestion] = Field(default_factory=list)
     search_tasks: list[SearchTask] = Field(default_factory=list)
@@ -133,6 +192,10 @@ class AnalysisReport(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
     chart_refs: list[str] = Field(default_factory=list)
     markdown: str = ""
+    budget_summary: BudgetSummary | None = None
+    budget_items: list[BudgetLineItem] = Field(default_factory=list)
+    option_profiles: list[OptionProfile] = Field(default_factory=list)
+    tables: list[ReportTable] = Field(default_factory=list)
 
 
 class SessionEvent(BaseModel):

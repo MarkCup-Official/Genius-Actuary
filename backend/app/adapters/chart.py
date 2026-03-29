@@ -9,13 +9,15 @@ SUPPORTED_CHART_TYPES = {"bar", "line", "radar", "pie"}
 
 class MockChartAdapter:
     def build_preview(self, session: AnalysisSession) -> list[ChartArtifact]:
-        if session.chart_artifacts:
-            return []
-
         for task in session.chart_tasks:
             if task.status == "pending":
                 task.status = "completed"
                 task.notes = "Completed by the mock chart adapter."
+
+        if session.report and session.report.budget_items:
+            return StructuredChartAdapter()._build_budget_artifacts(session)
+        if session.report and session.report.option_profiles:
+            return StructuredChartAdapter()._build_option_artifacts(session)
 
         return [
             ChartArtifact(
@@ -47,6 +49,12 @@ class DisabledChartAdapter:
 
 class StructuredChartAdapter:
     def build_preview(self, session: AnalysisSession) -> list[ChartArtifact]:
+        if session.report:
+            if session.report.budget_items:
+                return self._build_budget_artifacts(session)
+            if session.report.option_profiles:
+                return self._build_option_artifacts(session)
+
         pending_tasks = [task for task in session.chart_tasks if task.status == "pending"]
         if not pending_tasks:
             return []
@@ -62,6 +70,148 @@ class StructuredChartAdapter:
 
             task.status = "completed"
             artifacts.append(artifact)
+
+        return artifacts
+
+    def _build_budget_artifacts(self, session: AnalysisSession) -> list[ChartArtifact]:
+        report = session.report
+        if report is None or report.budget_summary is None:
+            return []
+
+        summary = report.budget_summary
+        cost_items = [item for item in report.budget_items if item.item_type != "income"]
+        income_items = [item for item in report.budget_items if item.item_type == "income"]
+
+        artifacts = [
+            ChartArtifact(
+                chart_type="bar",
+                title="Budget Range Overview",
+                spec={
+                    "categories": ["Low", "Base", "High"],
+                    "series": [
+                        {
+                            "name": "Total cost",
+                            "data": [
+                                summary.total_cost_low,
+                                summary.total_cost_base,
+                                summary.total_cost_high,
+                            ],
+                        },
+                        {
+                            "name": "Potential income",
+                            "data": [
+                                summary.total_income_low,
+                                summary.total_income_base,
+                                summary.total_income_high,
+                            ],
+                        },
+                        {
+                            "name": "Net outlay",
+                            "data": [
+                                summary.net_low,
+                                summary.net_base,
+                                summary.net_high,
+                            ],
+                        },
+                    ],
+                    "unit": summary.currency,
+                },
+                notes=summary.reserve_note or "Budget range synthesized from the final report.",
+            )
+        ]
+
+        if cost_items:
+            artifacts.append(
+                ChartArtifact(
+                    chart_type="pie",
+                    title="Cost Mix At Base Budget",
+                    spec={
+                        "categories": [item.name for item in cost_items],
+                        "series": [
+                            {
+                                "name": "Base cost mix",
+                                "data": [item.base for item in cost_items],
+                            }
+                        ],
+                        "unit": summary.currency,
+                    },
+                    notes="Only cost-side items are shown in the mix chart.",
+                )
+            )
+
+        if income_items:
+            artifacts.append(
+                ChartArtifact(
+                    chart_type="bar",
+                    title="Income And Offset Sources",
+                    spec={
+                        "categories": [item.name for item in income_items],
+                        "series": [
+                            {
+                                "name": "Base income",
+                                "data": [item.base for item in income_items],
+                            }
+                        ],
+                        "unit": summary.currency,
+                    },
+                    notes="Potential income is shown separately from direct cost.",
+                )
+            )
+
+        return artifacts
+
+    def _build_option_artifacts(self, session: AnalysisSession) -> list[ChartArtifact]:
+        report = session.report
+        if report is None or not report.option_profiles:
+            return []
+
+        options = report.option_profiles
+        unit = options[0].currency if options else ""
+        score_values = [option.score if option.score is not None else 0 for option in options]
+        cost_values = [option.estimated_cost_base if option.estimated_cost_base is not None else 0 for option in options]
+
+        artifacts = [
+            ChartArtifact(
+                chart_type="bar",
+                title="Option Score Comparison",
+                spec={
+                    "categories": [option.name for option in options],
+                    "series": [{"name": "Score", "data": score_values}],
+                    "unit": "score",
+                },
+                notes="Scores compress cost, upside, risk, and executability into a single comparison aid.",
+            ),
+            ChartArtifact(
+                chart_type="bar",
+                title="Estimated Cost By Option",
+                spec={
+                    "categories": [option.name for option in options],
+                    "series": [{"name": "Base cost", "data": cost_values}],
+                    "unit": unit,
+                },
+                notes="Base cost values are paired with the table, not treated as exact forecasts.",
+            ),
+        ]
+
+        if len(options) >= 2:
+            artifacts.append(
+                ChartArtifact(
+                    chart_type="radar",
+                    title="Option Balance Radar",
+                    spec={
+                        "radar_indicators": ["Growth", "Stability", "Cost pressure", "Flexibility"],
+                        "series": [
+                            {
+                                "name": option.name,
+                                "data": self._option_radar_values(option),
+                            }
+                            for option in options[:3]
+                        ],
+                        "unit": "score",
+                    },
+                    notes="Radar values are heuristic profile signals derived from the final option descriptions.",
+                )
+            )
 
         return artifacts
 
@@ -206,6 +356,16 @@ class StructuredChartAdapter:
         if scale <= 0:
             scale = 1.0
         return [round(abs(value) / scale * 10, 4) for value in values]
+
+    def _option_radar_values(self, option) -> list[float]:
+        base_score = option.score if option.score is not None else 6.0
+        cost_pressure = 3.0
+        if option.estimated_cost_base is not None:
+            cost_pressure = min(10.0, max(2.0, option.estimated_cost_base / 150000))
+        growth = min(10.0, max(4.0, base_score + 0.8))
+        stability = min(10.0, max(3.5, 10.5 - len(option.caution_flags) * 1.4))
+        flexibility = min(10.0, max(3.5, 8.5 - len(option.conditions) * 0.8))
+        return [round(growth, 2), round(stability, 2), round(cost_pressure, 2), round(flexibility, 2)]
 
     @staticmethod
     def _coerce_number(value: Any) -> float | None:

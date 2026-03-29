@@ -6,6 +6,7 @@ from app.domain.models import (
     AnalysisReport,
     AnalysisSession,
     CalculationTask,
+    ChartArtifact,
     ChartTask,
     ClarificationQuestion,
     EvidenceItem,
@@ -96,6 +97,7 @@ class SessionStepResponse(BaseModel):
     pending_calculation_tasks: list[CalculationTask] = Field(default_factory=list)
     pending_chart_tasks: list[ChartTask] = Field(default_factory=list)
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
+    chart_artifacts: list[ChartArtifact] = Field(default_factory=list)
     major_conclusions: list[MajorConclusionItem] = Field(default_factory=list)
     report_preview: AnalysisReport | None = None
 

@@ -5,10 +5,10 @@ import { ModeSelectionPage } from '@/features/analysis/pages/mode-selection-page
 import { renderWithProviders } from '@/tests/test-utils'
 
 describe('ModeSelectionPage', () => {
-  it('renders both analysis modes from the adapter', async () => {
+  it('renders both rebuilt analysis modes from the adapter', async () => {
     renderWithProviders(<ModeSelectionPage />, '/analysis/modes')
 
-    expect(await screen.findByText('单项成本 / 风险分析')).toBeInTheDocument()
-    expect(await screen.findByText('多选项决策参考')).toBeInTheDocument()
+    expect(await screen.findByText('成本预估')).toBeInTheDocument()
+    expect(await screen.findByText('多项决策')).toBeInTheDocument()
   })
 })

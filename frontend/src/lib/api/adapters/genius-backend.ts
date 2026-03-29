@@ -4,10 +4,17 @@ import type {
   AnalysisReport,
   AnalysisSession,
   AuditLogEntry,
+  BudgetLineItem,
+  BudgetSummary,
+  CalculationTask,
   ChartArtifact,
+  ChartTask,
   ClarificationQuestion,
   ModeDefinition,
+  OptionProfile,
+  ReportTable,
   ResourceRecord,
+  SearchTask,
   User,
   UserAnswer,
 } from '@/types'
@@ -33,6 +40,9 @@ export interface BackendClarificationQuestion {
   allow_skip: boolean
   priority: number
   answered: boolean
+  question_group?: string
+  input_hint?: string
+  example_answer?: string
 }
 
 export interface BackendUserAnswer {
@@ -51,6 +61,8 @@ export interface BackendSearchTask {
   required_fields: string[]
   freshness_requirement: string
   status: string
+  task_group?: string
+  notes?: string
 }
 
 export interface BackendCalculationTask {
@@ -63,6 +75,17 @@ export interface BackendCalculationTask {
   result_text?: string
   result_payload?: Record<string, unknown>
   error_margin?: string
+  notes?: string
+  status: string
+}
+
+export interface BackendChartTask {
+  task_id: string
+  objective: string
+  chart_type: string
+  title: string
+  preferred_unit?: string
+  source_task_ids?: string[]
   notes?: string
   status: string
 }
@@ -105,12 +128,71 @@ export interface BackendMajorConclusionItem {
   confidence: number
 }
 
+export interface BackendBudgetSummary {
+  currency: string
+  total_cost_low: number
+  total_cost_base: number
+  total_cost_high: number
+  total_income_low: number
+  total_income_base: number
+  total_income_high: number
+  net_low: number
+  net_base: number
+  net_high: number
+  reserve_note?: string
+}
+
+export interface BackendBudgetLineItem {
+  line_item_id: string
+  name: string
+  category: string
+  item_type: string
+  low: number
+  base: number
+  high: number
+  currency: string
+  rationale?: string
+  basis_refs?: string[]
+  confidence?: number
+}
+
+export interface BackendOptionProfile {
+  option_id: string
+  name: string
+  summary?: string
+  pros?: string[]
+  cons?: string[]
+  conditions?: string[]
+  fit_for?: string[]
+  caution_flags?: string[]
+  estimated_cost_low?: number | null
+  estimated_cost_base?: number | null
+  estimated_cost_high?: number | null
+  currency?: string
+  score?: number | null
+  confidence?: number
+  basis_refs?: string[]
+}
+
+export interface BackendReportTable {
+  table_id: string
+  title: string
+  columns: string[]
+  rows: Array<Record<string, unknown>>
+  notes?: string
+}
+
 export interface BackendReport {
   summary: string
   assumptions: string[]
   recommendations: string[]
   open_questions: string[]
   chart_refs: string[]
+  markdown?: string
+  budget_summary?: BackendBudgetSummary | null
+  budget_items?: BackendBudgetLineItem[]
+  option_profiles?: BackendOptionProfile[]
+  tables?: BackendReportTable[]
 }
 
 export interface BackendSessionEvent {
@@ -136,6 +218,7 @@ export interface BackendSession {
   answers: BackendUserAnswer[]
   search_tasks: BackendSearchTask[]
   calculation_tasks: BackendCalculationTask[]
+  chart_tasks: BackendChartTask[]
   evidence_items: BackendEvidenceItem[]
   chart_artifacts: BackendChartArtifact[]
   major_conclusions: BackendMajorConclusionItem[]
@@ -168,8 +251,9 @@ export interface BackendSessionStepResponse {
   pending_questions: BackendClarificationQuestion[]
   pending_search_tasks: BackendSearchTask[]
   pending_calculation_tasks?: BackendCalculationTask[]
-  pending_chart_tasks?: Array<Record<string, unknown>>
+  pending_chart_tasks?: BackendChartTask[]
   evidence_items: BackendEvidenceItem[]
+  chart_artifacts?: BackendChartArtifact[]
   major_conclusions: BackendMajorConclusionItem[]
   report_preview: BackendReport | null
 }
@@ -245,64 +329,65 @@ function isChineseLocale() {
   return i18n.language.startsWith('zh')
 }
 
-export function createBackendPseudoUser(): User {
-  return createBrowserBoundUser()
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.map((item) => String(item).trim()).filter(Boolean)
 }
 
-export function mapBackendMode(
-  mode: BackendSession['mode'] | string,
-): AnalysisMode {
-  return mode === 'multi_option' ? 'multi-option' : 'single-option'
+function numberList(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item))
 }
 
-export function mapModeDefinitions(
-  bootstrap: BackendBootstrapResponse,
-): ModeDefinition[] {
+function buildFallbackLabels(values: number[]) {
+  return values.map((_, index) => `#${index + 1}`)
+}
+
+function normalizeActivityLabel(activityStatus?: string) {
   const isZh = isChineseLocale()
-  const notesSummary = bootstrap.notes.join(' ')
+  const mapping: Record<string, string> = {
+    idle: isZh ? '等待启动' : 'Idle',
+    waiting_for_user_clarification_answers: isZh
+      ? '等待用户回答问题'
+      : 'Waiting for answers',
+    searching_web_for_evidence: isZh ? '搜索网页中' : 'Searching the web',
+    running_deterministic_calculations: isZh
+      ? '执行预算或对比计算'
+      : 'Running calculations',
+    preparing_visualizations: isZh ? '生成图表中' : 'Preparing charts',
+    searching_and_synthesizing: isZh ? '搜索并综合证据中' : 'Searching and synthesizing',
+    running_analysis_pipeline: isZh ? '分析思考中' : 'Running analysis',
+    analyzing: isZh ? '分析思考中' : 'Analyzing',
+    completed: isZh ? '分析完成' : 'Completed',
+    failed: isZh ? '分析失败' : 'Failed',
+  }
 
-  return bootstrap.supported_modes.map((mode) => {
-    const id = mapBackendMode(mode)
-    return {
-      id,
-      title:
-        id === 'single-option'
-          ? isZh
-            ? '单项成本 / 风险分析'
-            : 'Single option cost / risk'
-          : isZh
-            ? '多选项决策参考'
-            : 'Multi-option decision reference',
-      subtitle:
-        id === 'single-option'
-          ? isZh
-            ? '由后端驱动的单方案分析流程'
-            : 'Backend-guided single decision analysis'
-          : isZh
-            ? '由后端驱动的多方案比较工作台'
-            : 'Backend-guided option comparison workspace',
-      description:
-        id === 'single-option'
-          ? isZh
-            ? `后端会先澄清目标、约束与不确定性，再进入分析流程。${notesSummary}`
-            : `The backend will clarify goals, constraints, and uncertainty before running the analysis loop. ${notesSummary}`
-          : isZh
-            ? `以后端主导的追问、证据搜集与报告生成来比较多个方案。${notesSummary}`
-            : `Compare multiple options with backend-owned clarification, evidence gathering, and report composition. ${notesSummary}`,
-      valueLens:
-        id === 'single-option'
-          ? isZh
-            ? ['成本', '风险', '约束', '假设']
-            : ['Cost', 'Risk', 'Constraints', 'Assumptions']
-          : isZh
-            ? ['方案对比', '权衡取舍', '偏好匹配', '证据支撑']
-            : ['Comparison', 'Trade-offs', 'Preference fit', 'Evidence'],
-      icon: id === 'single-option' ? 'sparkles' : 'git-compare',
-    }
-  })
+  if (!activityStatus) {
+    return isZh ? '等待系统推进' : 'Waiting for orchestration'
+  }
+
+  return mapping[activityStatus] ?? activityStatus.replaceAll('_', ' ')
 }
 
-export function mapBackendQuestion(
+function resolveFieldType(
+  question: BackendClarificationQuestion,
+): ClarificationQuestion['fieldType'] {
+  if (question.options.length) {
+    return 'single-choice'
+  }
+
+  return 'textarea'
+}
+
+function mapBackendQuestion(
   question: BackendClarificationQuestion,
 ): ClarificationQuestion {
   return {
@@ -310,12 +395,15 @@ export function mapBackendQuestion(
     sessionId: '',
     question: question.question_text,
     purpose: question.purpose,
-    fieldType: question.options.length ? 'single-choice' : 'textarea',
+    questionGroup: question.question_group ?? '',
+    inputHint: question.input_hint ?? '',
+    exampleAnswer: question.example_answer ?? '',
+    fieldType: resolveFieldType(question),
     options: question.options.map((option) => ({
       value: option,
       label: option,
     })),
-    allowCustomInput: true,
+    allowCustomInput: question.allow_custom_input,
     allowSkip: question.allow_skip,
     priority: question.priority,
     recommended: [],
@@ -323,17 +411,86 @@ export function mapBackendQuestion(
   }
 }
 
-function mapLastInsight(session: BackendSession) {
-  const isZh = isChineseLocale()
-  const latestConclusion = session.major_conclusions.at(-1)?.content
-  const latestEvent = session.events.at(-1)?.kind
+function mapBackendSearchTask(task: BackendSearchTask, sessionId: string): SearchTask {
+  return {
+    id: task.task_id,
+    sessionId,
+    topic: task.search_topic,
+    goal: task.search_goal,
+    scope: task.search_scope,
+    suggestedQueries: task.suggested_queries,
+    requiredFields: task.required_fields,
+    freshnessRequirement: task.freshness_requirement === 'high' ? 'high' : 'standard',
+    status:
+      task.status === 'running' || task.status === 'completed'
+        ? task.status
+        : 'pending',
+    taskGroup: task.task_group ?? '',
+    notes: task.notes ?? '',
+  }
+}
 
-  return (
-    latestConclusion ??
-    session.report?.summary ??
-    latestEvent ??
-    (isZh ? '后端会话已同步。' : 'Backend session synced.')
-  )
+function mapBackendCalculationTask(
+  task: BackendCalculationTask,
+  sessionId: string,
+  fallbackCreatedAt: string,
+): CalculationTask {
+  const result =
+    task.result_text?.trim() ||
+    (typeof task.result_value === 'number' && Number.isFinite(task.result_value)
+      ? String(task.result_value)
+      : task.status === 'completed'
+        ? isChineseLocale()
+          ? '已完成计算'
+          : 'Completed'
+        : task.status === 'failed'
+          ? isChineseLocale()
+            ? '计算失败'
+            : 'Failed'
+          : isChineseLocale()
+            ? '等待计算'
+            : 'Pending')
+
+  return {
+    id: task.task_id,
+    sessionId,
+    taskType: task.objective,
+    formulaExpression: task.formula_hint,
+    inputParams: Object.fromEntries(
+      Object.entries(task.input_params ?? {}).map(([key, value]) => {
+        if (typeof value === 'number') {
+          return [key, value]
+        }
+
+        return [key, String(value)]
+      }),
+    ),
+    units: task.unit ?? '',
+    result,
+    errorMargin: task.error_margin ?? undefined,
+    notes: task.notes ?? undefined,
+    status: task.status,
+    createdAt: fallbackCreatedAt,
+  }
+}
+
+function mapBackendChartTask(task: BackendChartTask, sessionId: string): ChartTask {
+  return {
+    id: task.task_id,
+    sessionId,
+    objective: task.objective,
+    chartType: mapChartKind(task.chart_type),
+    title: task.title,
+    preferredUnit: task.preferred_unit,
+    sourceTaskIds: task.source_task_ids ?? [],
+    notes: task.notes ?? '',
+    status:
+      task.status === 'running' ||
+      task.status === 'completed' ||
+      task.status === 'failed'
+        ? task.status
+        : 'pending',
+  }
 }
 
 function mapChartKind(chartType: string): ChartArtifact['kind'] {
@@ -350,42 +507,18 @@ function mapChartKind(chartType: string): ChartArtifact['kind'] {
   }
 }
 
-function coerceStringArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value
-    .map((item) => String(item).trim())
-    .filter(Boolean)
-}
-
-function coerceNumberArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value
-    .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item))
-}
-
-function buildFallbackCategories(values: number[]) {
-  return values.map((_, index) => `#${index + 1}`)
-}
-
 export function mapBackendChart(
   chart: BackendChartArtifact,
   sessionId: string,
 ): ChartArtifact {
   const isZh = isChineseLocale()
   const kind = mapChartKind(chart.chart_type)
-  const categories = coerceStringArray(chart.spec.categories ?? chart.spec.labels)
-  const fallbackValues = coerceNumberArray(chart.spec.values)
+  const fallbackValues = numberList(chart.spec.values)
+  const categories = stringList(chart.spec.categories ?? chart.spec.labels)
   const resolvedCategories =
     categories.length || !fallbackValues.length
       ? categories
-      : buildFallbackCategories(fallbackValues)
+      : buildFallbackLabels(fallbackValues)
   const backendSeries = Array.isArray(chart.spec.series) ? chart.spec.series : []
   const normalizedSeries = backendSeries
     .map((series, index) => ({
@@ -393,15 +526,16 @@ export function mapBackendChart(
         typeof series?.name === 'string' && series.name.trim()
           ? series.name.trim()
           : `${isZh ? '序列' : 'Series'} ${index + 1}`,
-      data: coerceNumberArray(series?.data),
+      data: numberList(series?.data),
     }))
     .filter((series) => series.data.length > 0)
-  const pairedSeries =
+
+  const compareSeries =
     normalizedSeries.length > 0
       ? normalizedSeries.flatMap((series) =>
           (resolvedCategories.length
             ? resolvedCategories
-            : buildFallbackCategories(series.data)
+            : buildFallbackLabels(series.data)
           ).map((label, index) => ({
             label,
             value: Number(series.data[index] ?? 0),
@@ -412,7 +546,7 @@ export function mapBackendChart(
         )
       : (resolvedCategories.length
           ? resolvedCategories
-          : buildFallbackCategories(fallbackValues)
+          : buildFallbackLabels(fallbackValues)
         ).map((label, index) => ({
           label,
           value: Number(fallbackValues[index] ?? 0),
@@ -420,34 +554,14 @@ export function mapBackendChart(
           nature: 'actual' as const,
           intensity: 0.7,
         }))
-  const lineSeries =
-    kind === 'line'
-      ? pairedSeries.filter(
-          (item) =>
-            item.group ===
-            (normalizedSeries[0]?.name ?? (isZh ? '当前' : 'Current')),
-        )
-      : undefined
-  const radarIndicators = coerceStringArray(
+
+  const radarIndicators = stringList(
     chart.spec.radar_indicators ?? chart.spec.categories ?? chart.spec.labels,
   )
   const resolvedRadarIndicators =
-    radarIndicators.length || !pairedSeries.length
+    radarIndicators.length || !compareSeries.length
       ? radarIndicators
-      : pairedSeries.map((item) => item.label)
-  const radarSeries =
-    kind === 'radar'
-      ? (normalizedSeries.length
-          ? normalizedSeries
-          : [{ name: chart.title, data: fallbackValues }]
-        ).map((series) => ({
-          name: series.name,
-          values: resolvedRadarIndicators.map((dimension, index) => ({
-            dimension,
-            value: Math.max(0, Math.min(10, Number(series.data[index] ?? 0))),
-          })),
-        }))
-      : undefined
+      : compareSeries.map((item) => item.label)
 
   return {
     id: chart.chart_id,
@@ -456,27 +570,239 @@ export function mapBackendChart(
     title: chart.title,
     unit: typeof chart.spec.unit === 'string' ? chart.spec.unit : undefined,
     note: chart.notes,
-    source: isZh ? '后端图表 MCP' : 'Backend chart MCP',
-    compareSeries: kind === 'bar' || kind === 'pie' ? pairedSeries : undefined,
-    lineSeries,
+    source: isZh ? '后端图表生成' : 'Backend chart generation',
+    compareSeries: kind === 'bar' || kind === 'pie' ? compareSeries : undefined,
+    lineSeries:
+      kind === 'line'
+        ? compareSeries
+            .filter(
+              (item) =>
+                item.group ===
+                (normalizedSeries[0]?.name ?? (isZh ? '当前' : 'Current')),
+            )
+            .map(({ label, value, group, nature, intensity }) => ({
+              label,
+              value,
+              group,
+              nature,
+              intensity,
+            }))
+        : undefined,
     scatterSeries:
       kind === 'scatter'
-        ? pairedSeries.map((item, index) => ({
+        ? compareSeries.map((item, index) => ({
             ...item,
             group: String(index + 1),
           }))
         : undefined,
-    radarSeries,
+    radarSeries:
+      kind === 'radar'
+        ? (normalizedSeries.length
+            ? normalizedSeries
+            : [{ name: chart.title, data: fallbackValues }]
+          ).map((series) => ({
+            name: series.name,
+            values: resolvedRadarIndicators.map((dimension, index) => ({
+              dimension,
+              value: Math.max(0, Math.min(10, Number(series.data[index] ?? 0))),
+            })),
+          }))
+        : undefined,
     heatmapSeries:
       kind === 'heatmap'
-        ? pairedSeries.map((item, index) => ({
+        ? compareSeries.map((item, index) => ({
             x: item.label,
-            y: isZh ? `第 ${index + 1} 行` : `Row ${index + 1}`,
+            y: `${isZh ? '行' : 'Row'} ${index + 1}`,
             value: item.value,
             nature: 'actual',
           }))
         : undefined,
   }
+}
+
+function mapBudgetSummary(
+  summary?: BackendBudgetSummary | null,
+): BudgetSummary | undefined {
+  if (!summary) {
+    return undefined
+  }
+
+  return {
+    currency: summary.currency,
+    totalCostLow: summary.total_cost_low,
+    totalCostBase: summary.total_cost_base,
+    totalCostHigh: summary.total_cost_high,
+    totalIncomeLow: summary.total_income_low,
+    totalIncomeBase: summary.total_income_base,
+    totalIncomeHigh: summary.total_income_high,
+    netLow: summary.net_low,
+    netBase: summary.net_base,
+    netHigh: summary.net_high,
+    reserveNote: summary.reserve_note ?? '',
+  }
+}
+
+function mapBudgetItems(items?: BackendBudgetLineItem[]): BudgetLineItem[] {
+  return (items ?? []).map((item) => ({
+    id: item.line_item_id,
+    name: item.name,
+    category: item.category,
+    itemType: item.item_type,
+    low: item.low,
+    base: item.base,
+    high: item.high,
+    currency: item.currency,
+    rationale: item.rationale ?? '',
+    basisRefs: item.basis_refs ?? [],
+    confidence: item.confidence ?? 0.6,
+  }))
+}
+
+function mapOptionProfiles(items?: BackendOptionProfile[]): OptionProfile[] {
+  return (items ?? []).map((item) => ({
+    id: item.option_id,
+    name: item.name,
+    summary: item.summary ?? '',
+    pros: item.pros ?? [],
+    cons: item.cons ?? [],
+    conditions: item.conditions ?? [],
+    fitFor: item.fit_for ?? [],
+    cautionFlags: item.caution_flags ?? [],
+    estimatedCostLow:
+      typeof item.estimated_cost_low === 'number' ? item.estimated_cost_low : undefined,
+    estimatedCostBase:
+      typeof item.estimated_cost_base === 'number' ? item.estimated_cost_base : undefined,
+    estimatedCostHigh:
+      typeof item.estimated_cost_high === 'number' ? item.estimated_cost_high : undefined,
+    currency: item.currency ?? 'CNY',
+    score: typeof item.score === 'number' ? item.score : undefined,
+    confidence: item.confidence ?? 0.6,
+    basisRefs: item.basis_refs ?? [],
+  }))
+}
+
+function mapReportTables(tables?: BackendReportTable[]): ReportTable[] {
+  return (tables ?? []).map((table) => ({
+    id: table.table_id,
+    title: table.title,
+    columns: table.columns,
+    rows: table.rows.map((row) =>
+      Object.fromEntries(
+        Object.entries(row).map(([key, value]) => {
+          if (typeof value === 'number') {
+            return [key, value]
+          }
+
+          if (value == null) {
+            return [key, null]
+          }
+
+          return [key, String(value)]
+        }),
+      ),
+    ),
+    notes: table.notes ?? '',
+  }))
+}
+
+function buildFallbackMarkdown(session: BackendSession): string {
+  const isZh = isChineseLocale()
+  const report = session.report
+
+  if (!report) {
+    return [
+      `# ${session.problem_statement}`,
+      '',
+      isZh ? '报告仍在生成，请先回到分析界面查看当前状态。' : 'The report is still being prepared.',
+    ].join('\n')
+  }
+
+  return [
+    `# ${session.problem_statement}`,
+    '',
+    report.summary,
+    '',
+    isZh ? '## 建议' : '## Recommendations',
+    ...(report.recommendations.length
+      ? report.recommendations.map((item) => `- ${item}`)
+      : [isZh ? '- 暂无明确建议。' : '- No recommendation available yet.']),
+    '',
+    isZh ? '## 假设' : '## Assumptions',
+    ...(report.assumptions.length
+      ? report.assumptions.map((item) => `- ${item}`)
+      : [isZh ? '- 暂无明确假设。' : '- No explicit assumptions returned.']),
+    '',
+    isZh ? '## 待确认问题' : '## Open Questions',
+    ...(report.open_questions.length
+      ? report.open_questions.map((item) => `- ${item}`)
+      : [isZh ? '- 当前没有额外待确认问题。' : '- No open questions remain.']),
+  ].join('\n')
+}
+
+function mapLastInsight(session: BackendSession) {
+  return (
+    session.current_focus ||
+    session.major_conclusions.at(-1)?.content ||
+    session.report?.summary ||
+    normalizeActivityLabel(session.activity_status)
+  )
+}
+
+export function createBackendPseudoUser(): User {
+  return createBrowserBoundUser()
+}
+
+export function mapBackendMode(
+  mode: BackendSession['mode'] | string,
+): AnalysisMode {
+  return mode === 'multi_option' ? 'multi-option' : 'single-option'
+}
+
+export function mapModeDefinitions(
+  bootstrap: BackendBootstrapResponse,
+): ModeDefinition[] {
+  const isZh = isChineseLocale()
+
+  return bootstrap.supported_modes.map((mode) => {
+    const id = mapBackendMode(mode)
+
+    return {
+      id,
+      title:
+        id === 'single-option'
+          ? isZh
+            ? '成本预估'
+            : 'Cost estimation'
+          : isZh
+            ? '多项决策'
+            : 'Multi-option decision',
+      subtitle:
+        id === 'single-option'
+          ? isZh
+            ? '输出预算范围、成本拆分、潜在回收与执行风险。'
+            : 'Estimate budget range, itemized costs, offsets, and risk.'
+          : isZh
+            ? '识别可选方案，并平行比较优缺点、成本与适配度。'
+            : 'Identify options and compare pros, cons, cost, and fit in parallel.',
+      description:
+        id === 'single-option'
+          ? isZh
+            ? '适合评估一个具体计划值不值得推进，重点输出预算区间、成本项、收入回收和关键风险。'
+            : 'Best for a single plan where you need budget ranges, cost breakdowns, and downside control.'
+          : isZh
+            ? '适合开放式决策题，让系统先识别可能方案，再输出平行对比和建议。'
+            : 'Best for open-ended choices where the model should infer and compare viable options.',
+      valueLens:
+        id === 'single-option'
+          ? isZh
+            ? ['预算范围', '成本拆分', '收入回收', '风险约束']
+            : ['Budget range', 'Cost breakdown', 'Revenue offsets', 'Execution risk']
+          : isZh
+            ? ['方案识别', '平行优缺点', '成本对比', '偏好适配']
+            : ['Option discovery', 'Parallel pros/cons', 'Cost comparison', 'Preference fit'],
+      icon: id === 'single-option' ? 'sparkles' : 'git-compare',
+    }
+  })
 }
 
 export function mapBackendSession(session: BackendSession): AnalysisSession {
@@ -493,6 +819,9 @@ export function mapBackendSession(session: BackendSession): AnalysisSession {
     followUpExtensionsUsed: session.follow_up_extensions_used,
     followUpBudgetExhausted: session.follow_up_budget_exhausted,
     deferredFollowUpQuestionCount: session.deferred_follow_up_question_count,
+    activityStatus: session.activity_status,
+    currentFocus: session.current_focus,
+    lastStopReason: session.last_stop_reason,
     lastInsight: mapLastInsight(session),
     questions: session.clarification_questions.map((question) => ({
       ...mapBackendQuestion(question),
@@ -503,26 +832,13 @@ export function mapBackendSession(session: BackendSession): AnalysisSession {
       questionId: answer.question_id,
       answerStatus: 'answered',
       selectedOptions: [answer.value],
-      customInput: undefined,
       numericValue: Number.isFinite(Number(answer.value))
         ? Number(answer.value)
         : undefined,
     })),
-    searchTasks: session.search_tasks.map((task) => ({
-      id: task.task_id,
-      sessionId: session.session_id,
-      topic: task.search_topic,
-      goal: task.search_goal,
-      scope: task.search_scope,
-      suggestedQueries: task.suggested_queries,
-      requiredFields: task.required_fields,
-      freshnessRequirement:
-        task.freshness_requirement === 'high' ? 'high' : 'standard',
-      status:
-        task.status === 'running' || task.status === 'completed'
-          ? task.status
-          : 'pending',
-    })),
+    searchTasks: session.search_tasks.map((task) =>
+      mapBackendSearchTask(task, session.session_id),
+    ),
     evidence: session.evidence_items.map((item) => ({
       id: item.evidence_id,
       sessionId: session.session_id,
@@ -549,217 +865,320 @@ export function mapBackendSession(session: BackendSession): AnalysisSession {
       confidence: item.confidence,
       createdAt: session.updated_at,
     })),
-    calculations: session.calculation_tasks.map((task) => ({
-      id: task.task_id,
-      sessionId: session.session_id,
-      taskType: task.objective,
-      formulaExpression: task.formula_hint,
-      inputParams: task.input_params as Record<string, string | number>,
-      units: task.unit ?? '',
-      result:
-        task.result_text?.trim() ||
-        (typeof task.result_value === 'number' &&
-        Number.isFinite(task.result_value)
-          ? String(task.result_value)
-          : task.status === 'completed'
-            ? isChineseLocale()
-              ? '后端已完成计算'
-              : 'Completed on backend'
-            : task.status === 'failed'
-              ? isChineseLocale()
-                ? '计算失败'
-                : 'Calculation failed'
-              : isChineseLocale()
-                ? '等待后端计算'
-                : 'Pending backend calculation'),
-      errorMargin: task.error_margin || undefined,
-      createdAt: session.updated_at,
-    })),
+    calculations: session.calculation_tasks.map((task) =>
+      mapBackendCalculationTask(task, session.session_id, session.updated_at),
+    ),
+    chartTasks: (session.chart_tasks ?? []).map((task) =>
+      mapBackendChartTask(task, session.session_id),
+    ),
+    chartArtifacts: session.chart_artifacts.map((artifact) =>
+      mapBackendChart(artifact, session.session_id),
+    ),
   }
 }
 
-function buildReportMarkdown(session: BackendSession) {
+function buildHighlights(session: BackendSession) {
   const isZh = isChineseLocale()
   const report = session.report
+  const mode = mapBackendMode(session.mode)
+  const budgetSummary = mapBudgetSummary(report?.budget_summary)
+  const optionProfiles = mapOptionProfiles(report?.option_profiles)
 
-  if (!report) {
+  if (mode === 'single-option' && budgetSummary) {
     return [
-      isZh ? '# 后端报告待生成' : '# Backend report pending',
-      '',
-      isZh
-        ? '后端会话暂未产出最终报告。'
-        : 'The backend session has not produced a final report yet.',
-      '',
-      isZh ? '## 当前证据' : '## Current evidence',
-      ...(session.evidence_items.length
-        ? session.evidence_items.map(
-            (item) => `- ${item.title}: ${item.summary}`,
-          )
-        : [isZh ? '- 暂无可用证据。' : '- No evidence items available yet.']),
-    ].join('\n')
-  }
-
-  return [
-    `# ${session.problem_statement}`,
-    '',
-    report.summary,
-    '',
-    isZh ? '## 建议' : '## Recommendations',
-    ...(report.recommendations.length
-      ? report.recommendations.map((item) => `- ${item}`)
-      : [isZh ? '- 暂无建议。' : '- No recommendations returned.']),
-    '',
-    isZh ? '## 假设' : '## Assumptions',
-    ...(report.assumptions.length
-      ? report.assumptions.map((item) => `- ${item}`)
-      : [isZh ? '- 未返回明确假设。' : '- No explicit assumptions returned.']),
-    '',
-    isZh ? '## 待确认问题' : '## Open Questions',
-    ...(report.open_questions.length
-      ? report.open_questions.map((item) => `- ${item}`)
-      : [isZh ? '- 暂无未决问题。' : '- No open questions remain.']),
-  ].join('\n')
-}
-
-export function mapBackendReport(session: BackendSession): AnalysisReport {
-  const isZh = isChineseLocale()
-
-  return {
-    id: `report-${session.session_id}`,
-    sessionId: session.session_id,
-    mode: mapBackendMode(session.mode),
-    summaryTitle: session.problem_statement,
-    markdown: buildReportMarkdown(session),
-    highlights: [
       {
-        id: 'backend-status',
-        label: isZh ? '后端状态' : 'Backend status',
-        value: session.status,
-        detail: isZh
-          ? '这里显示 FastAPI 编排器的真实当前状态。'
-          : 'This card reflects the real FastAPI orchestrator state.',
+        id: 'budget-range',
+        label: isZh ? '预算范围' : 'Budget range',
+        value: `${Math.round(budgetSummary.netLow)} - ${Math.round(budgetSummary.netHigh)} ${budgetSummary.currency}`,
+        detail: isZh ? '净预算区间，已计入潜在收入或回收。' : 'Net range including potential offsets.',
       },
       {
-        id: 'answers-count',
-        label: isZh ? '已记录回答' : 'Answers captured',
-        value: String(session.answers.length),
-        detail: isZh
-          ? '后端已收集到的追问回答数量。'
-          : 'Clarification responses recorded by the backend.',
+        id: 'base-budget',
+        label: isZh ? '基准净预算' : 'Base net budget',
+        value: `${Math.round(budgetSummary.netBase)} ${budgetSummary.currency}`,
+        detail: isZh ? '最适合作为决策时的默认预算线。' : 'The most useful default planning figure.',
+      },
+      {
+        id: 'budget-items',
+        label: isZh ? '预算项目数' : 'Budget items',
+        value: String(report?.budget_items?.length ?? 0),
+        detail: isZh ? '包含直接成本、机会成本、收入和回收项。' : 'Direct cost, opportunity cost, and revenue items.',
       },
       {
         id: 'evidence-count',
         label: isZh ? '证据条目' : 'Evidence items',
         value: String(session.evidence_items.length),
-        detail: isZh
-          ? '后端搜索适配层当前产出的证据数量。'
-          : 'Evidence generated by the backend search adapter.',
+        detail: isZh ? '用于支撑预算与风险判断的外部证据。' : 'Evidence backing the estimate.',
+      },
+    ]
+  }
+
+  if (mode === 'multi-option' && optionProfiles.length > 0) {
+    const bestOption = [...optionProfiles]
+      .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
+      .at(0)
+
+    return [
+      {
+        id: 'option-count',
+        label: isZh ? '识别方案数' : 'Options identified',
+        value: String(optionProfiles.length),
+        detail: isZh ? '系统根据问题识别并整理出的候选路径。' : 'Paths identified and compared in parallel.',
       },
       {
-        id: 'chart-count',
-        label: isZh ? '图表产物' : 'Chart artifacts',
-        value: String(session.chart_artifacts.length),
-        detail: isZh
-          ? '后端图表适配层返回的预览图表数量。'
-          : 'Preview artifacts returned by the backend chart adapter.',
+        id: 'best-option',
+        label: isZh ? '当前优先方案' : 'Current lead option',
+        value: bestOption?.name ?? (isZh ? '待判断' : 'Pending'),
+        detail: isZh ? '基于当前证据和偏好约束的领先选项。' : 'Lead option under current evidence and constraints.',
       },
-    ],
-    calculations: mapBackendSession(session).calculations,
-    charts: session.chart_artifacts.map((item) =>
-      mapBackendChart(item, session.session_id),
-    ),
-    evidence: mapBackendSession(session).evidence,
-    assumptions: session.report?.assumptions ?? [
-      isZh
-        ? '当前结果依赖后端已收集到的用户输入、证据与结构化计算任务。'
-        : 'The current result depends on the user inputs, evidence, and structured calculation tasks collected by the backend.',
-    ],
+      {
+        id: 'best-score',
+        label: isZh ? '综合评分' : 'Composite score',
+        value:
+          typeof bestOption?.score === 'number'
+            ? `${bestOption.score.toFixed(1)}`
+            : isZh
+              ? '未评分'
+              : 'Unscored',
+        detail: isZh ? '仅用于排序辅助，不代表绝对结论。' : 'Useful for ranking, not an absolute truth.',
+      },
+      {
+        id: 'evidence-count',
+        label: isZh ? '证据条目' : 'Evidence items',
+        value: String(session.evidence_items.length),
+        detail: isZh ? '支撑方案比较和成本判断的证据数量。' : 'Evidence supporting the comparison.',
+      },
+    ]
+  }
+
+  return [
+    {
+      id: 'session-status',
+      label: isZh ? '当前状态' : 'Current status',
+      value: session.status,
+      detail: normalizeActivityLabel(session.activity_status),
+    },
+    {
+      id: 'answer-count',
+      label: isZh ? '已回答问题' : 'Answered questions',
+      value: String(session.answers.length),
+      detail: isZh ? '本轮会话中已记录的用户回答数量。' : 'Answers recorded in the session.',
+    },
+  ]
+}
+
+export function mapBackendReport(session: BackendSession): AnalysisReport {
+  const mappedSession = mapBackendSession(session)
+  const report = session.report
+
+  return {
+    id: `report-${session.session_id}`,
+    sessionId: session.session_id,
+    mode: mappedSession.mode,
+    summaryTitle: session.problem_statement,
+    markdown: report?.markdown?.trim() || buildFallbackMarkdown(session),
+    highlights: buildHighlights(session),
+    calculations: mappedSession.calculations,
+    charts: mappedSession.chartArtifacts ?? [],
+    evidence: mappedSession.evidence,
+    assumptions: report?.assumptions ?? [],
     disclaimers: [
-      isZh
-        ? '数值结果只对输入参数本身负责；如果输入是假设值、估算值或过期值，结论也会随之偏移。'
-        : 'Numeric outputs are only as reliable as their inputs; assumed, estimated, or stale parameters will propagate into the result.',
-      isZh
-        ? '图表用于帮助理解趋势和权衡，不应替代对原始参数、公式和证据来源的复核。'
-        : 'Charts are explanatory aids for trends and trade-offs and should not replace review of the underlying parameters, formulas, and evidence sources.',
+      isChineseLocale()
+        ? '预算、成本和方案评分都依赖当前输入与证据，若关键假设变化，结论也会同步变化。'
+        : 'Budget estimates and option scores only hold under the current assumptions and evidence.',
+      isChineseLocale()
+        ? '表格和图表用于帮助比较与沟通，不应代替你对原始条件、合同和外部政策的复核。'
+        : 'Tables and charts aid comparison and communication and should not replace source verification.',
     ],
+    budgetSummary: mapBudgetSummary(report?.budget_summary),
+    budgetItems: mapBudgetItems(report?.budget_items),
+    optionProfiles: mapOptionProfiles(report?.option_profiles),
+    tables: mapReportTables(report?.tables),
   }
 }
 
-function progressCursor(status: BackendSession['status']) {
-  switch (status) {
-    case 'INIT':
-      return 0
-    case 'CLARIFYING':
-      return 1
-    case 'ANALYZING':
-      return 2
-    case 'READY_FOR_REPORT':
-    case 'REPORTING':
-      return 3
-    case 'COMPLETED':
-      return 4
-    case 'FAILED':
-      return 4
-    default:
-      return 0
+function buildStages(mode: AnalysisMode): AnalysisProgress['stages'] {
+  const isZh = isChineseLocale()
+
+  if (mode === 'multi-option') {
+    return [
+      {
+        id: 'clarify',
+        title: isZh ? '澄清决策目标' : 'Clarify the decision goal',
+        description: isZh
+          ? '补齐目标、约束和偏好，让系统知道真正要解决什么问题。'
+          : 'Clarify the real goal, constraints, and preference structure.',
+        status: 'pending',
+      },
+      {
+        id: 'search',
+        title: isZh ? '识别并搜索方案' : 'Discover and research options',
+        description: isZh
+          ? '识别可能方案，并搜索支持或反驳每种方案的外部证据。'
+          : 'Identify plausible options and gather evidence for each.',
+        status: 'pending',
+      },
+      {
+        id: 'compare',
+        title: isZh ? '整理平行优缺点' : 'Organize parallel pros and cons',
+        description: isZh
+          ? '把每种方案的收益、代价、门槛和风险整理到同一比较框架里。'
+          : 'Normalize pros, cons, cost, and constraints into one frame.',
+        status: 'pending',
+      },
+      {
+        id: 'visualize',
+        title: isZh ? '生成对比图表' : 'Generate comparison visuals',
+        description: isZh
+          ? '输出分数图、成本图和辅助比较图表。'
+          : 'Generate score, cost, and comparison visuals.',
+        status: 'pending',
+      },
+      {
+        id: 'report',
+        title: isZh ? '撰写决策结果' : 'Draft the decision report',
+        description: isZh
+          ? '汇总结论、建议、表格和长文分析。'
+          : 'Assemble recommendations, tables, and narrative analysis.',
+        status: 'pending',
+      },
+    ]
   }
+
+  return [
+    {
+      id: 'clarify',
+      title: isZh ? '澄清预算边界' : 'Clarify the planning boundary',
+      description: isZh
+        ? '补齐目标范围、规模、关键约束和预算敏感点。'
+        : 'Clarify the scope, scale, constraints, and budget sensitivity.',
+      status: 'pending',
+    },
+    {
+      id: 'search',
+      title: isZh ? '搜索成本证据' : 'Research cost evidence',
+      description: isZh
+        ? '搜索成本、收益、价格和市场基准。'
+        : 'Gather benchmarks for cost, revenue, and market assumptions.',
+      status: 'pending',
+    },
+    {
+      id: 'calculate',
+      title: isZh ? '估算预算区间' : 'Estimate the budget range',
+      description: isZh
+        ? '汇总预算项，形成低位、基准和高位区间。'
+        : 'Estimate low, base, and high budget ranges.',
+      status: 'pending',
+    },
+    {
+      id: 'visualize',
+      title: isZh ? '生成预算图表' : 'Generate budget visuals',
+      description: isZh
+        ? '把预算结构、回收和净投入绘制成图表。'
+        : 'Turn the budget structure and offsets into charts.',
+      status: 'pending',
+    },
+    {
+      id: 'report',
+      title: isZh ? '撰写预算结果' : 'Draft the budget report',
+      description: isZh
+        ? '输出预算范围、成本明细、表格和文字结论。'
+        : 'Produce the final budget range, tables, and narrative.',
+      status: 'pending',
+    },
+  ]
+}
+
+function resolveActiveStageIndex(
+  status: BackendSession['status'],
+  activityStatus?: string,
+) {
+  if (status === 'INIT' || status === 'CLARIFYING') {
+    return 0
+  }
+
+  if (status === 'ANALYZING') {
+    if (
+      activityStatus === 'searching_web_for_evidence' ||
+      activityStatus === 'searching_and_synthesizing'
+    ) {
+      return 1
+    }
+
+    if (activityStatus === 'running_deterministic_calculations') {
+      return 2
+    }
+
+    if (activityStatus === 'preparing_visualizations') {
+      return 3
+    }
+
+    return 2
+  }
+
+  return 4
 }
 
 export function mapBackendProgress(
   session: BackendSession,
   step?: BackendSessionStepResponse,
 ): AnalysisProgress {
-  const isZh = isChineseLocale()
-  const stages = [
-    {
-      id: 'clarify',
-      title: isZh ? '澄清决策背景' : 'Clarify decision context',
-      description: isZh
-        ? '收集目标、约束与高价值缺失信息。'
-        : 'Collecting goals, constraints, and missing high-value facts.',
-    },
-    {
-      id: 'plan',
-      title: isZh ? '规划 MCP 轮次' : 'Plan MCP round',
-      description: isZh
-        ? '在后端准备搜索、计算、绘图任务与首轮结论。'
-        : 'Preparing search, calculation, chart tasks, and first-pass conclusions on the backend.',
-    },
-    {
-      id: 'evidence',
-      title: isZh ? '收集证据' : 'Gather evidence',
-      description: isZh
-        ? '执行后端搜索、计算与图表适配器，并回注结构化结果。'
-        : 'Executing the backend search, calculation, and chart adapters and injecting structured results.',
-    },
-    {
-      id: 'report',
-      title: isZh ? '生成报告' : 'Assemble report',
-      description: isZh
-        ? '构建最终摘要、建议与图表引用。'
-        : 'Building the final report summary, recommendations, and chart references.',
-    },
-  ]
+  const activityStatus = step?.activity_status ?? session.activity_status
+  const mode = mapBackendMode(session.mode)
+  const activeStageIndex = resolveActiveStageIndex(
+    step?.status ?? session.status,
+    activityStatus,
+  )
+  const stages: AnalysisProgress['stages'] = buildStages(mode).map((stage, index) => {
+    const status: AnalysisProgress['stages'][number]['status'] =
+      (step?.status ?? session.status) === 'COMPLETED'
+        ? 'completed'
+        : index < activeStageIndex
+          ? 'completed'
+          : index === activeStageIndex
+            ? 'active'
+            : 'pending'
 
-  const cursor = progressCursor(step?.status ?? session.status)
+    return {
+      ...stage,
+      status,
+    }
+  })
 
   return {
     sessionId: session.session_id,
     status: step?.status ?? session.status,
-    overallProgress: Math.round((cursor / stages.length) * 100),
-    currentStepLabel: step?.prompt_to_user ?? mapLastInsight(session),
+    overallProgress:
+      (step?.status ?? session.status) === 'COMPLETED'
+        ? 100
+        : Math.round(((activeStageIndex + 1) / stages.length) * 100),
+    currentStepLabel:
+      step?.prompt_to_user ||
+      normalizeActivityLabel(activityStatus) ||
+      session.current_focus ||
+      mapLastInsight(session),
     errorMessage: step?.error_message ?? session.error_message ?? undefined,
-    stages: stages.map((stage, index) => ({
-      ...stage,
-      status:
-        index + 1 < cursor
-          ? 'completed'
-          : index + 1 === cursor
-            ? (step?.status ?? session.status) === 'COMPLETED'
-              ? 'completed'
-              : 'active'
-            : 'pending',
+    nextAction: step?.next_action,
+    activityStatus,
+    currentFocus: step?.current_focus ?? session.current_focus,
+    lastStopReason: step?.last_stop_reason ?? session.last_stop_reason,
+    stages,
+    pendingQuestions: step?.pending_questions?.map((question) => ({
+      ...mapBackendQuestion(question),
+      sessionId: session.session_id,
     })),
+    pendingSearchTasks: step?.pending_search_tasks?.map((task) =>
+      mapBackendSearchTask(task, session.session_id),
+    ),
+    pendingCalculationTasks: (step?.pending_calculation_tasks ?? []).map((task) =>
+      mapBackendCalculationTask(task, session.session_id, session.updated_at),
+    ),
+    pendingChartTasks: (step?.pending_chart_tasks ?? []).map((task) =>
+      mapBackendChartTask(task, session.session_id),
+    ),
+    chartArtifacts: (step?.chart_artifacts ?? session.chart_artifacts).map(
+      (artifact) => mapBackendChart(artifact, session.session_id),
+    ),
   }
 }
 
@@ -801,8 +1220,7 @@ export function toBackendAnswers(answers: UserAnswer[]): BackendUserAnswer[] {
     const value =
       joinedOptions ||
       answer.customInput ||
-      (typeof answer.numericValue === 'number' &&
-      Number.isFinite(answer.numericValue)
+      (typeof answer.numericValue === 'number' && Number.isFinite(answer.numericValue)
         ? String(answer.numericValue)
         : '') ||
       answer.answerStatus

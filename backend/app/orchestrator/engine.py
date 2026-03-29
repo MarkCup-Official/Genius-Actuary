@@ -23,9 +23,7 @@ from app.services.audit import AuditLogService
 
 
 class AnalysisAdapter(Protocol):
-    def generate_initial_questions(
-        self, session: AnalysisSession
-    ) -> list[ClarificationQuestion]: ...
+    def generate_initial_questions(self, session: AnalysisSession) -> list[ClarificationQuestion]: ...
 
     def plan_next_round(self, session: AnalysisSession) -> AnalysisLoopPlan: ...
 
@@ -84,6 +82,8 @@ class AnalysisOrchestrator:
                     "answers_count": len(session.answers),
                     "question_count": len(session.clarification_questions),
                     "search_task_count": len(session.search_tasks),
+                    "calculation_task_count": len(session.calculation_tasks),
+                    "chart_task_count": len(session.chart_tasks),
                     "evidence_count": len(session.evidence_items),
                     "analysis_rounds_completed": session.analysis_rounds_completed,
                 },
@@ -92,268 +92,231 @@ class AnalysisOrchestrator:
 
         try:
             if session.status == SessionStatus.INIT:
-                session.status = SessionStatus.CLARIFYING
-                session.error_message = None
-                session.activity_status = "waiting_for_llm_clarification_questions"
-                self.repository.save(session)
-
-                session.clarification_questions = self._collect_new_questions(
-                    session,
-                    self.analysis_adapter.generate_initial_questions(session),
-                )
-                session.activity_status = "waiting_for_user_clarification_answers"
-                session.current_focus = "Collect the first round of high-value user constraints."
-                session.last_stop_reason = "Waiting for initial clarification answers."
-                session.events.append(
-                    SessionEvent(
-                        kind="questions_generated",
-                        payload={
-                            "question_count": len(session.clarification_questions),
-                            "question_ids": [
-                                question.question_id for question in session.clarification_questions
-                            ],
-                        },
-                    )
-                )
-                self.repository.save(session)
-                self._write_log(
-                    session,
-                    action="QUESTIONS_GENERATED",
-                    summary="Generated the initial clarification round for the session.",
-                    metadata={"question_count": str(len(session.clarification_questions))},
-                )
-                return self._build_response(
-                    session_id,
-                    NextAction.ASK_USER,
-                    "请先补充第一轮关键信息，系统会基于答案继续进入循环分析。",
-                )
+                return self._handle_init(session)
 
             if session.status == SessionStatus.CLARIFYING:
                 unanswered = [question for question in session.clarification_questions if not question.answered]
                 if unanswered:
                     session.activity_status = "waiting_for_user_clarification_answers"
-                    session.current_focus = "Still waiting for unresolved clarification answers."
-                    session.last_stop_reason = "The current round cannot proceed until pending questions are answered."
+                    session.current_focus = "Waiting for the current clarification round to be answered."
+                    session.last_stop_reason = "The backend cannot continue until the pending questions are answered."
                     session.events.append(
                         SessionEvent(
                             kind="clarification_waiting_for_answers",
                             payload={
                                 "unanswered_count": len(unanswered),
-                                "unanswered_question_ids": [
-                                    question.question_id for question in unanswered
-                                ],
+                                "unanswered_question_ids": [question.question_id for question in unanswered],
                             },
                         )
                     )
                     self.repository.save(session)
                     return self._build_response(
-                        session_id,
+                        session.session_id,
                         NextAction.ASK_USER,
-                        "还有待补充的问题，前端可以继续渲染追问表单。",
+                        "There are still unanswered questions waiting for user input.",
                     )
-
                 return self._apply_loop_plan(session)
 
             if session.status == SessionStatus.ANALYZING:
-                pending_search_tasks = [
-                    task for task in session.search_tasks if self._task_is_pending(task.status)
-                ]
-                pending_calculation_tasks = [
-                    task for task in session.calculation_tasks if self._task_is_pending(task.status)
-                ]
-                pending_chart_tasks = [
-                    task for task in session.chart_tasks if self._task_is_pending(task.status)
-                ]
-                if pending_search_tasks or pending_calculation_tasks or pending_chart_tasks:
-                    session.activity_status = "running_mcp_pipeline"
-                    session.events.append(
-                        SessionEvent(
-                            kind="search_execution_started",
-                            payload={
-                                "pending_search_task_count": len(pending_search_tasks),
-                                "pending_search_task_ids": [task.task_id for task in pending_search_tasks],
-                                "pending_calculation_task_count": len(pending_calculation_tasks),
-                                "pending_calculation_task_ids": [
-                                    task.task_id for task in pending_calculation_tasks
-                                ],
-                                "pending_chart_task_count": len(pending_chart_tasks),
-                                "pending_chart_task_ids": [task.task_id for task in pending_chart_tasks],
-                            },
-                        )
-                    )
-                    self.repository.save(session)
-
-                    if pending_search_tasks:
-                        session.evidence_items.extend(self.search_adapter.run(pending_search_tasks))
-                    if pending_calculation_tasks:
-                        self.calculation_adapter.run(pending_calculation_tasks)
-                    new_chart_artifacts: list[ChartArtifact] = []
-                    if pending_chart_tasks:
-                        new_chart_artifacts = self.chart_adapter.build_preview(session)
-                    added_charts = self._merge_chart_artifacts(session, new_chart_artifacts)
-                    session.events.append(
-                        SessionEvent(
-                            kind="mcp_round_completed",
-                            payload={
-                                "evidence_count": len(session.evidence_items),
-                                "completed_calculation_count": len(
-                                    [
-                                        task
-                                        for task in pending_calculation_tasks
-                                        if task.status == "completed"
-                                    ]
-                                ),
-                                "failed_calculation_count": len(
-                                    [
-                                        task
-                                        for task in pending_calculation_tasks
-                                        if task.status == "failed"
-                                    ]
-                                ),
-                                "chart_count": len(session.chart_artifacts),
-                                "new_chart_count": len(added_charts),
-                            },
-                        )
-                    )
-                    return self._apply_loop_plan(session, action="MCP_ROUND_COMPLETED")
-
-                return self._apply_loop_plan(session)
+                return self._run_pending_tasks(session)
 
             if session.status == SessionStatus.READY_FOR_REPORT:
-                session.status = SessionStatus.REPORTING
-                session.error_message = None
-                session.activity_status = "waiting_for_llm_report_generation"
-                self.repository.save(session)
-
-                session.report = self.analysis_adapter.build_report(session)
-                session.activity_status = "report_generated_waiting_for_delivery"
-                session.last_stop_reason = (
-                    session.last_stop_reason or "The structured loop concluded and moved into report writing."
-                )
-                session.events.append(
-                    SessionEvent(
-                        kind="report_built",
-                        payload={
-                            "has_report": session.report is not None,
-                            "recommendation_count": len(session.report.recommendations) if session.report else 0,
-                            "assumption_count": len(session.report.assumptions) if session.report else 0,
-                        },
-                    )
-                )
-                self.repository.save(session)
-                self._write_log(
-                    session,
-                    action="REPORT_BUILT",
-                    summary="Built the distilled final report payload from the loop conclusions.",
-                    metadata={"has_report": str(session.report is not None).lower()},
-                )
+                self._build_report(session)
+                return self._complete_session(session.session_id)
 
             if session.status == SessionStatus.REPORTING:
-                session.status = SessionStatus.COMPLETED
-                session.activity_status = "completed"
-                session.events.append(
-                    SessionEvent(
-                        kind="session_completed",
-                        payload={
-                            "status_after": session.status.value,
-                            "analysis_rounds_completed": session.analysis_rounds_completed,
-                        },
-                    )
-                )
-                self.repository.save(session)
-                self._write_log(
-                    session,
-                    action="SESSION_COMPLETED",
-                    summary="Marked the analysis session as completed.",
-                )
-                return self._build_response(
-                    session_id,
-                    NextAction.COMPLETE,
-                    "最终报告已生成，本轮循环分析完成。",
-                )
+                return self._complete_session(session.session_id)
 
             if session.status == SessionStatus.COMPLETED:
                 return self._build_response(
-                    session_id,
+                    session.session_id,
                     NextAction.COMPLETE,
-                    "当前会话已完成，如需补充新条件可以在后续扩展为新一轮分析。",
+                    "This analysis session is already complete.",
                 )
+
         except LLMInvocationError as error:
-            session.status = SessionStatus.FAILED
-            session.activity_status = "llm_call_failed"
-            session.error_message = str(error)
-            session.events.append(
-                SessionEvent(
-                    kind="llm_invocation_failed",
-                    payload={"message": session.error_message},
-                )
-            )
-            self.repository.save(session)
-            self._write_log(
+            return self._mark_failed(
                 session,
+                activity_status="llm_call_failed",
+                error_message=str(error),
+                event_kind="llm_invocation_failed",
                 action="LLM_INVOCATION_FAILED",
                 summary="LLM invocation failed after retries.",
-                status="error",
-                metadata={"message": session.error_message or "unknown"},
+                prompt_to_user="The LLM call failed after all retry attempts.",
             )
-            return self._build_response(
-                session_id,
-                NextAction.COMPLETE,
-                "LLM 调用重试后仍然失败，请检查模型配置或稍后重试。",
-            )
-
         except Exception as error:
-            session.status = SessionStatus.FAILED
-            session.activity_status = "unexpected_error"
-            session.error_message = str(error)
-            session.events.append(
-                SessionEvent(
-                    kind="orchestrator_unexpected_exception",
-                    payload={
-                        "error_type": type(error).__name__,
-                        "message": session.error_message,
-                    },
-                )
-            )
-            self.repository.save(session)
-            self._write_log(
+            return self._mark_failed(
                 session,
+                activity_status="unexpected_error",
+                error_message=str(error),
+                event_kind="orchestrator_unexpected_exception",
                 action="ORCHESTRATOR_UNEXPECTED_EXCEPTION",
-                summary="An unexpected orchestrator exception was captured and converted into a failed session state.",
-                status="error",
-                metadata={
-                    "error_type": type(error).__name__,
-                    "message": session.error_message or "unknown",
-                },
-            )
-            return self._build_response(
-                session_id,
-                NextAction.COMPLETE,
-                "The session hit an unexpected error while advancing and has been marked as failed.",
+                summary="The orchestrator hit an unexpected error.",
+                prompt_to_user="The session hit an unexpected error while advancing.",
+                extra_payload={"error_type": type(error).__name__},
             )
 
-        session.status = SessionStatus.FAILED
-        session.activity_status = "failed"
-        session.error_message = session.error_message or "The orchestrator reached an unexpected branch."
+        return self._mark_failed(
+            session,
+            activity_status="failed",
+            error_message=session.error_message or "The orchestrator reached an unexpected branch.",
+            event_kind="session_failed",
+            action="SESSION_FAILED",
+            summary="Session entered failed state in the orchestrator.",
+            prompt_to_user="The session entered a failed state inside the orchestrator.",
+        )
+
+    def _handle_init(self, session: AnalysisSession) -> SessionStepResponse:
+        session.status = SessionStatus.CLARIFYING
+        session.error_message = None
+        session.activity_status = "waiting_for_llm_clarification_questions"
+        self.repository.save(session)
+
+        session.clarification_questions = self._collect_new_questions(
+            session,
+            self.analysis_adapter.generate_initial_questions(session),
+        )
+        session.activity_status = "waiting_for_user_clarification_answers"
+        session.current_focus = "Collect the first round of high-value user facts."
+        session.last_stop_reason = "Waiting for initial clarification answers."
         session.events.append(
             SessionEvent(
-                kind="session_failed",
+                kind="questions_generated",
                 payload={
-                    "message": session.error_message,
+                    "question_count": len(session.clarification_questions),
+                    "question_ids": [question.question_id for question in session.clarification_questions],
                 },
             )
         )
         self.repository.save(session)
         self._write_log(
             session,
-            action="SESSION_FAILED",
-            summary="Session entered failed state in the orchestrator.",
-            status="error",
+            action="QUESTIONS_GENERATED",
+            summary="Generated the initial clarification round for the session.",
+            metadata={"question_count": str(len(session.clarification_questions))},
         )
         return self._build_response(
-            session_id,
+            session.session_id,
+            NextAction.ASK_USER,
+            "Please answer the first round of clarification questions so the backend can continue the analysis workflow.",
+        )
+
+    def _run_pending_tasks(self, session: AnalysisSession) -> SessionStepResponse:
+        pending_search_tasks = [task for task in session.search_tasks if self._task_is_pending(task.status)]
+        pending_calculation_tasks = [
+            task for task in session.calculation_tasks if self._task_is_pending(task.status)
+        ]
+        pending_chart_tasks = [task for task in session.chart_tasks if self._task_is_pending(task.status)]
+
+        if not (pending_search_tasks or pending_calculation_tasks or pending_chart_tasks):
+            return self._apply_loop_plan(session)
+
+        session.activity_status = self._resolve_analysis_activity_status(
+            pending_search_tasks,
+            pending_calculation_tasks,
+            pending_chart_tasks,
+        )
+        session.events.append(
+            SessionEvent(
+                kind="mcp_round_started",
+                payload={
+                    "pending_search_task_ids": [task.task_id for task in pending_search_tasks],
+                    "pending_calculation_task_ids": [task.task_id for task in pending_calculation_tasks],
+                    "pending_chart_task_ids": [task.task_id for task in pending_chart_tasks],
+                },
+            )
+        )
+        self.repository.save(session)
+
+        if pending_search_tasks:
+            session.evidence_items.extend(self.search_adapter.run(pending_search_tasks))
+        if pending_calculation_tasks:
+            self.calculation_adapter.run(pending_calculation_tasks)
+
+        new_chart_artifacts: list[ChartArtifact] = []
+        if pending_chart_tasks:
+            new_chart_artifacts = self.chart_adapter.build_preview(session)
+        added_charts = self._merge_chart_artifacts(session, new_chart_artifacts)
+
+        session.events.append(
+            SessionEvent(
+                kind="mcp_round_completed",
+                payload={
+                    "evidence_count": len(session.evidence_items),
+                    "completed_calculation_count": len(
+                        [task for task in pending_calculation_tasks if task.status == "completed"]
+                    ),
+                    "failed_calculation_count": len(
+                        [task for task in pending_calculation_tasks if task.status == "failed"]
+                    ),
+                    "chart_count": len(session.chart_artifacts),
+                    "new_chart_count": len(added_charts),
+                },
+            )
+        )
+        self.repository.save(session)
+        return self._apply_loop_plan(session, action="MCP_ROUND_COMPLETED")
+
+    def _build_report(self, session: AnalysisSession) -> None:
+        session.status = SessionStatus.REPORTING
+        session.error_message = None
+        session.activity_status = "waiting_for_llm_report_generation"
+        self.repository.save(session)
+
+        session.report = self.analysis_adapter.build_report(session)
+        final_chart_artifacts = self.chart_adapter.build_preview(session)
+        if final_chart_artifacts:
+            session.chart_artifacts = final_chart_artifacts
+            session.report.chart_refs = [artifact.chart_id for artifact in session.chart_artifacts]
+        session.activity_status = "report_generated_waiting_for_delivery"
+        session.last_stop_reason = (
+            session.last_stop_reason or "The structured loop concluded and moved into report writing."
+        )
+        session.events.append(
+            SessionEvent(
+                kind="report_built",
+                payload={
+                    "has_report": session.report is not None,
+                    "recommendation_count": len(session.report.recommendations) if session.report else 0,
+                    "table_count": len(session.report.tables) if session.report else 0,
+                    "chart_count": len(session.chart_artifacts),
+                },
+            )
+        )
+        self.repository.save(session)
+        self._write_log(
+            session,
+            action="REPORT_BUILT",
+            summary="Built the final report payload from the loop conclusions.",
+            metadata={"has_report": str(session.report is not None).lower()},
+        )
+
+    def _complete_session(self, session_id: str) -> SessionStepResponse:
+        session = self.repository.get(session_id)
+        if session is None:
+            raise ValueError(f"Session {session_id} not found.")
+
+        session.status = SessionStatus.COMPLETED
+        session.activity_status = "completed"
+        session.events.append(
+            SessionEvent(
+                kind="session_completed",
+                payload={
+                    "status_after": session.status.value,
+                    "analysis_rounds_completed": session.analysis_rounds_completed,
+                },
+            )
+        )
+        self.repository.save(session)
+        self._write_log(
+            session,
+            action="SESSION_COMPLETED",
+            summary="Marked the analysis session as completed.",
+        )
+        return self._build_response(
+            session.session_id,
             NextAction.COMPLETE,
-            "会话进入失败状态，请检查 orchestrator 分支。",
+            "The final report is ready.",
         )
 
     def _apply_loop_plan(
@@ -374,8 +337,7 @@ class AnalysisOrchestrator:
 
         candidate_questions = self._collect_new_questions(session, plan.clarification_questions)
         follow_up_budget_exhausted = (
-            bool(candidate_questions)
-            and session.follow_up_rounds_used >= session.follow_up_round_limit
+            bool(candidate_questions) and session.follow_up_rounds_used >= session.follow_up_round_limit
         )
 
         if follow_up_budget_exhausted:
@@ -397,10 +359,7 @@ class AnalysisOrchestrator:
             session.follow_up_budget_exhausted = False
             session.deferred_follow_up_question_count = 0
             new_search_tasks = self._merge_search_tasks(session, plan.search_tasks)
-            new_calculation_tasks = self._merge_calculation_tasks(
-                session,
-                plan.calculation_tasks,
-            )
+            new_calculation_tasks = self._merge_calculation_tasks(session, plan.calculation_tasks)
             new_chart_tasks = self._merge_chart_tasks(session, plan.chart_tasks)
             new_conclusions = self._merge_conclusions(session, plan.major_conclusions)
 
@@ -432,21 +391,18 @@ class AnalysisOrchestrator:
             session.status = SessionStatus.CLARIFYING
             session.activity_status = "waiting_for_user_clarification_answers"
             next_action = NextAction.ASK_USER
-            prompt_to_user = "系统识别到仍有高价值缺口，请继续回答新一轮追问。"
+            prompt_to_user = "The backend generated another high-value clarification round."
         elif new_search_tasks or new_calculation_tasks or new_chart_tasks:
             session.status = SessionStatus.ANALYZING
             session.activity_status = "waiting_for_mcp_execution"
             next_action = NextAction.RUN_MCP
-            prompt_to_user = (
-                "The backend planned search, calculation, or chart tasks. "
-                "Run the MCP pipeline before the next analysis round."
-            )
+            prompt_to_user = "The backend planned search, calculation, or chart tasks for the next analysis round."
         else:
             session.status = SessionStatus.READY_FOR_REPORT
             session.activity_status = "ready_for_report_generation"
             if not session.last_stop_reason:
                 session.last_stop_reason = (
-                    "No additional clarification, calculation, search, or chart tasks were generated."
+                    "No additional clarification, search, calculation, or chart tasks were generated."
                 )
 
         self.repository.save(session)
@@ -457,23 +413,15 @@ class AnalysisOrchestrator:
             metadata={
                 "analysis_round": str(session.analysis_rounds_completed),
                 "new_question_count": str(len(new_questions)),
-                "deferred_question_count": str(session.deferred_follow_up_question_count),
                 "new_search_task_count": str(len(new_search_tasks)),
                 "new_calculation_task_count": str(len(new_calculation_tasks)),
                 "new_chart_task_count": str(len(new_chart_tasks)),
                 "new_conclusion_count": str(len(new_conclusions)),
                 "ready_for_report": str(plan.ready_for_report).lower(),
-                "follow_up_budget_exhausted": str(session.follow_up_budget_exhausted).lower(),
-                "follow_up_rounds_used": str(session.follow_up_rounds_used),
-                "follow_up_round_limit": str(session.follow_up_round_limit),
                 "activity_status": session.activity_status,
             },
         )
-        return self._build_response(
-            session.session_id,
-            next_action,
-            prompt_to_user,
-        )
+        return self._build_response(session.session_id, next_action, prompt_to_user)
 
     def _build_response(
         self,
@@ -508,9 +456,39 @@ class AnalysisOrchestrator:
                 task for task in session.chart_tasks if self._task_is_pending(task.status)
             ],
             evidence_items=session.evidence_items,
+            chart_artifacts=session.chart_artifacts,
             major_conclusions=session.major_conclusions,
             report_preview=session.report,
         )
+
+    def _mark_failed(
+        self,
+        session: AnalysisSession,
+        *,
+        activity_status: str,
+        error_message: str,
+        event_kind: str,
+        action: str,
+        summary: str,
+        prompt_to_user: str,
+        extra_payload: dict[str, str] | None = None,
+    ) -> SessionStepResponse:
+        session.status = SessionStatus.FAILED
+        session.activity_status = activity_status
+        session.error_message = error_message
+        payload = {"message": session.error_message}
+        if extra_payload:
+            payload.update(extra_payload)
+        session.events.append(SessionEvent(kind=event_kind, payload=payload))
+        self.repository.save(session)
+        self._write_log(
+            session,
+            action=action,
+            summary=summary,
+            status="error",
+            metadata={key: str(value) for key, value in payload.items()},
+        )
+        return self._build_response(session.session_id, NextAction.COMPLETE, prompt_to_user)
 
     def _write_log(
         self,
@@ -530,6 +508,24 @@ class AnalysisOrchestrator:
             status=status,
             metadata=metadata,
         )
+
+    def _resolve_analysis_activity_status(
+        self,
+        search_tasks: list[SearchTask],
+        calculation_tasks: list[CalculationTask],
+        chart_tasks: list[ChartTask],
+    ) -> str:
+        if search_tasks and not calculation_tasks and not chart_tasks:
+            return "searching_web_for_evidence"
+        if calculation_tasks and not search_tasks and not chart_tasks:
+            return "running_deterministic_calculations"
+        if chart_tasks and not search_tasks and not calculation_tasks:
+            return "preparing_visualizations"
+        if search_tasks and calculation_tasks:
+            return "searching_and_synthesizing"
+        if search_tasks or calculation_tasks or chart_tasks:
+            return "running_analysis_pipeline"
+        return "analyzing"
 
     @staticmethod
     def _collect_new_questions(
@@ -693,8 +689,7 @@ class AnalysisOrchestrator:
 
     @staticmethod
     def _task_is_pending(status: str) -> bool:
-        normalized = status.strip().lower()
-        return normalized not in {"completed", "failed", "skipped", "cancelled"}
+        return status.strip().lower() not in {"completed", "failed", "skipped", "cancelled"}
 
     @staticmethod
     def _question_signature(question: ClarificationQuestion) -> str:
