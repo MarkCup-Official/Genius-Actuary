@@ -8,63 +8,85 @@ import { DebugShell } from '@/components/layout/debug-shell'
 import { RequireAuth } from '@/features/auth/require-auth'
 import { RequireDebugAuth } from '@/features/logs/require-debug-auth'
 
-const LoginPage = lazy(() => import('@/features/auth/login-page').then((module) => ({ default: module.LoginPage })))
-const DashboardPage = lazy(() =>
-  import('@/features/dashboard/dashboard-page').then((module) => ({ default: module.DashboardPage })),
+const LoginPage = lazy(() =>
+  import('@/features/auth/login-page').then((module) => ({
+    default: module.LoginPage,
+  })),
 )
 const ModeSelectionPage = lazy(() =>
-  import('@/features/analysis/pages/mode-selection-page').then((module) => ({ default: module.ModeSelectionPage })),
+  import('@/features/analysis/pages/mode-selection-page').then((module) => ({
+    default: module.ModeSelectionPage,
+  })),
 )
 const ProblemInputPage = lazy(() =>
-  import('@/features/analysis/pages/problem-input-page').then((module) => ({ default: module.ProblemInputPage })),
+  import('@/features/analysis/pages/problem-input-page').then((module) => ({
+    default: module.ProblemInputPage,
+  })),
 )
 const AnalysisSessionPage = lazy(() =>
-  import('@/features/analysis/pages/analysis-session-page').then((module) => ({ default: module.AnalysisSessionPage })),
+  import('@/features/analysis/pages/analysis-session-page').then((module) => ({
+    default: module.AnalysisSessionPage,
+  })),
 )
 const ClarificationPage = lazy(() =>
-  import('@/features/analysis/pages/clarification-page').then((module) => ({ default: module.ClarificationPage })),
+  import('@/features/analysis/pages/clarification-page').then((module) => ({
+    default: module.ClarificationPage,
+  })),
 )
 const ProgressPage = lazy(() =>
-  import('@/features/analysis/pages/progress-page').then((module) => ({ default: module.ProgressPage })),
+  import('@/features/analysis/pages/progress-page').then((module) => ({
+    default: module.ProgressPage,
+  })),
 )
 const ReportPage = lazy(() =>
-  import('@/features/analysis/pages/report-page').then((module) => ({ default: module.ReportPage })),
+  import('@/features/analysis/pages/report-page').then((module) => ({
+    default: module.ReportPage,
+  })),
 )
 const SettingsPage = lazy(() =>
-  import('@/features/settings/settings-page').then((module) => ({ default: module.SettingsPage })),
+  import('@/features/settings/settings-page').then((module) => ({
+    default: module.SettingsPage,
+  })),
 )
 const ProfilePage = lazy(() =>
-  import('@/features/user-profile/profile-page').then((module) => ({ default: module.ProfilePage })),
+  import('@/features/user-profile/profile-page').then((module) => ({
+    default: module.ProfilePage,
+  })),
 )
-const RolesPage = lazy(() => import('@/features/admin/roles-page').then((module) => ({ default: module.RolesPage })))
-const NotificationsCenterPage = lazy(() =>
-  import('@/features/notifications/notifications-center-page').then((module) => ({
-    default: module.NotificationsCenterPage,
+const RolesPage = lazy(() =>
+  import('@/features/admin/roles-page').then((module) => ({
+    default: module.RolesPage,
   })),
 )
 const AuditLogPage = lazy(() =>
-  import('@/features/logs/audit-log-page').then((module) => ({ default: module.AuditLogPage })),
+  import('@/features/logs/audit-log-page').then((module) => ({
+    default: module.AuditLogPage,
+  })),
 )
 const DebugLoginPage = lazy(() =>
-  import('@/features/logs/debug-login-page').then((module) => ({ default: module.DebugLoginPage })),
+  import('@/features/logs/debug-login-page').then((module) => ({
+    default: module.DebugLoginPage,
+  })),
 )
 const SessionDebugPage = lazy(() =>
-  import('@/features/logs/session-debug-page').then((module) => ({ default: module.SessionDebugPage })),
-)
-const FileManagerPage = lazy(() =>
-  import('@/features/files/file-manager-page').then((module) => ({ default: module.FileManagerPage })),
-)
-const DataVizPage = lazy(() =>
-  import('@/features/dataviz/data-viz-page').then((module) => ({ default: module.DataVizPage })),
+  import('@/features/logs/session-debug-page').then((module) => ({
+    default: module.SessionDebugPage,
+  })),
 )
 const ResourceListPage = lazy(() =>
-  import('@/features/resources/resource-list-page').then((module) => ({ default: module.ResourceListPage })),
+  import('@/features/resources/resource-list-page').then((module) => ({
+    default: module.ResourceListPage,
+  })),
 )
 const ResourceFormPage = lazy(() =>
-  import('@/features/resources/resource-form-page').then((module) => ({ default: module.ResourceFormPage })),
+  import('@/features/resources/resource-form-page').then((module) => ({
+    default: module.ResourceFormPage,
+  })),
 )
 const ResourceDetailPage = lazy(() =>
-  import('@/features/resources/resource-detail-page').then((module) => ({ default: module.ResourceDetailPage })),
+  import('@/features/resources/resource-detail-page').then((module) => ({
+    default: module.ResourceDetailPage,
+  })),
 )
 
 function RouteFallback() {
@@ -96,10 +118,19 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <Navigate to="/dashboard" replace /> },
-          { path: '/dashboard', element: withRouteSuspense(<DashboardPage />) },
-          { path: '/analysis/modes', element: withRouteSuspense(<ModeSelectionPage />) },
-          { path: '/analysis/intake', element: withRouteSuspense(<ProblemInputPage />) },
+          { index: true, element: <Navigate to="/analysis/modes" replace /> },
+          {
+            path: '/dashboard',
+            element: <Navigate to="/analysis/modes" replace />,
+          },
+          {
+            path: '/analysis/modes',
+            element: withRouteSuspense(<ModeSelectionPage />),
+          },
+          {
+            path: '/analysis/intake',
+            element: withRouteSuspense(<ProblemInputPage />),
+          },
           {
             path: '/analysis/session/:sessionId',
             element: withRouteSuspense(<AnalysisSessionPage />),
@@ -112,14 +143,32 @@ export const router = createBrowserRouter([
             path: '/analysis/session/:sessionId/progress',
             element: withRouteSuspense(<ProgressPage />),
           },
-          { path: '/analysis/session/:sessionId/report', element: withRouteSuspense(<ReportPage />) },
+          {
+            path: '/analysis/session/:sessionId/report',
+            element: withRouteSuspense(<ReportPage />),
+          },
           { path: '/settings', element: withRouteSuspense(<SettingsPage />) },
           { path: '/profile', element: withRouteSuspense(<ProfilePage />) },
-          { path: '/notifications', element: withRouteSuspense(<NotificationsCenterPage />) },
-          { path: '/files', element: withRouteSuspense(<FileManagerPage />) },
-          { path: '/dataviz', element: withRouteSuspense(<DataVizPage />) },
-          { path: '/resources/:resourceKey', element: withRouteSuspense(<ResourceListPage />) },
-          { path: '/resources/:resourceKey/new', element: withRouteSuspense(<ResourceFormPage />) },
+          {
+            path: '/notifications',
+            element: <Navigate to="/analysis/modes" replace />,
+          },
+          {
+            path: '/files',
+            element: <Navigate to="/analysis/modes" replace />,
+          },
+          {
+            path: '/dataviz',
+            element: <Navigate to="/analysis/modes" replace />,
+          },
+          {
+            path: '/resources/:resourceKey',
+            element: withRouteSuspense(<ResourceListPage />),
+          },
+          {
+            path: '/resources/:resourceKey/new',
+            element: withRouteSuspense(<ResourceFormPage />),
+          },
           {
             path: '/resources/:resourceKey/:recordId',
             element: withRouteSuspense(<ResourceDetailPage />),
@@ -144,14 +193,20 @@ export const router = createBrowserRouter([
         children: [
           { path: '/debug', element: <Navigate to="/debug/logs" replace /> },
           { path: '/debug/logs', element: withRouteSuspense(<AuditLogPage />) },
-          { path: '/debug/sessions', element: withRouteSuspense(<SessionDebugPage />) },
-          { path: '/debug/admin/roles', element: withRouteSuspense(<RolesPage />) },
+          {
+            path: '/debug/sessions',
+            element: withRouteSuspense(<SessionDebugPage />),
+          },
+          {
+            path: '/debug/admin/roles',
+            element: withRouteSuspense(<RolesPage />),
+          },
         ],
       },
     ],
   },
   {
     path: '*',
-    element: <Navigate to="/dashboard" replace />,
+    element: <Navigate to="/analysis/modes" replace />,
   },
 ])

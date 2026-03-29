@@ -10,6 +10,8 @@ from app.domain.models import (
     AnalysisMode,
     AnalysisReport,
     AnalysisSession,
+    CalculationTask,
+    ChartTask,
     ClarificationQuestion,
     MajorConclusionItem,
     SessionEvent,
@@ -93,6 +95,32 @@ class MockAnalysisAdapter:
                 stop_reason="Search MCP should gather evidence for the next analysis round.",
             )
 
+        if not session.calculation_tasks:
+            return AnalysisLoopPlan(
+                calculation_tasks=[
+                    CalculationTask(
+                        objective="Compute current evidence-backed readiness score",
+                        formula_hint="answer_count * 10 + evidence_count * 15",
+                        input_params={
+                            "answer_count": len(session.answers),
+                            "evidence_count": len(session.evidence_items),
+                        },
+                        unit="points",
+                    )
+                ],
+                chart_tasks=[
+                    ChartTask(
+                        objective="Visualize the current readiness score",
+                        chart_type="bar",
+                        title="Readiness Score Snapshot",
+                        preferred_unit="points",
+                    )
+                ],
+                major_conclusions=conclusions,
+                reasoning_focus="Quantify the current decision-readiness snapshot before reporting.",
+                stop_reason="Calculation MCP and Chart MCP should turn the current context into a numeric summary.",
+            )
+
         if len(session.answers) < 3 and len(session.clarification_questions) < 5:
             return AnalysisLoopPlan(
                 clarification_questions=[
@@ -123,7 +151,7 @@ class MockAnalysisAdapter:
             assumptions.append("External evidence is still generated from placeholder search results.")
 
         recommendations = [
-            "Finish the clarification answers before running a real search or calculation pipeline.",
+            "Review the calculation outputs alongside the distilled evidence before finalizing a recommendation.",
             "Keep orchestration on the backend and let the frontend render only the server response contract.",
         ]
         return AnalysisReport(
@@ -138,7 +166,7 @@ class MockAnalysisAdapter:
             markdown=(
                 "## Summary\n"
                 "The backend orchestration loop can already support clarification, iterative planning, "
-                "conclusion distillation, and report generation.\n\n"
+                "conclusion distillation, calculation, chart generation, and report generation.\n\n"
                 "## Recommendations\n"
                 + "\n".join(f"- {item}" for item in recommendations)
             ),
@@ -217,18 +245,29 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
 
         clarification_questions = self._parse_questions(payload.get("clarification_questions"))
         search_tasks = self._parse_search_tasks(payload.get("search_tasks"))
+        calculation_tasks = self._parse_calculation_tasks(payload.get("calculation_tasks"))
+        chart_tasks = self._parse_chart_tasks(payload.get("chart_tasks"))
         conclusions = self._parse_conclusions(payload.get("major_conclusions"))
         ready_for_report = self._coerce_bool(payload.get("ready_for_report", False), default=False)
         reasoning_focus = str(payload.get("reasoning_focus", "")).strip()
         stop_reason = str(payload.get("stop_reason", "")).strip()
 
-        if not clarification_questions and not search_tasks and not conclusions and not ready_for_report:
+        if (
+            not clarification_questions
+            and not search_tasks
+            and not calculation_tasks
+            and not chart_tasks
+            and not conclusions
+            and not ready_for_report
+        ):
             raise LLMInvocationError(
                 "Failed to plan the next analysis round because the response payload was invalid."
             )
         return AnalysisLoopPlan(
             clarification_questions=clarification_questions,
             search_tasks=search_tasks,
+            calculation_tasks=calculation_tasks,
+            chart_tasks=chart_tasks,
             major_conclusions=conclusions,
             ready_for_report=ready_for_report,
             reasoning_focus=reasoning_focus,
@@ -324,6 +363,48 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                     conclusion_type=str(item.get("conclusion_type", "inference")).strip() or "inference",
                     basis_refs=self._string_list(item.get("basis_refs")),
                     confidence=max(0.0, min(1.0, confidence)),
+                )
+            )
+        return parsed
+
+    def _parse_calculation_tasks(self, value: Any) -> list[CalculationTask]:
+        if not isinstance(value, list):
+            return []
+
+        parsed: list[CalculationTask] = []
+        for item in value[:5]:
+            if not isinstance(item, dict):
+                continue
+            input_params = item.get("input_params")
+            parsed.append(
+                CalculationTask(
+                    objective=str(item.get("objective", "")).strip()
+                    or "Compute a decision-relevant numeric summary.",
+                    formula_hint=str(item.get("formula_hint", "")).strip()
+                    or "0",
+                    input_params=input_params if isinstance(input_params, dict) else {},
+                    unit=str(item.get("unit", "")).strip(),
+                )
+            )
+        return parsed
+
+    def _parse_chart_tasks(self, value: Any) -> list[ChartTask]:
+        if not isinstance(value, list):
+            return []
+
+        parsed: list[ChartTask] = []
+        for item in value[:5]:
+            if not isinstance(item, dict):
+                continue
+            parsed.append(
+                ChartTask(
+                    objective=str(item.get("objective", "")).strip()
+                    or "Visualize the most decision-relevant numeric comparison.",
+                    chart_type=self._normalize_chart_type(item.get("chart_type")),
+                    title=str(item.get("title", "")).strip() or "Decision chart",
+                    preferred_unit=str(item.get("preferred_unit", "")).strip(),
+                    source_task_ids=self._string_list(item.get("source_task_ids")),
+                    notes=str(item.get("notes", "")).strip(),
                 )
             )
         return parsed
@@ -508,6 +589,13 @@ class OpenAICompatibleAnalysisAdapter(MockAnalysisAdapter):
                 return priority_aliases.get(normalized, default)
 
         return default
+
+    @staticmethod
+    def _normalize_chart_type(value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized in {"bar", "line", "radar", "pie"}:
+            return normalized
+        return "bar"
 
     @staticmethod
     def _loads_json_object(content: str) -> dict[str, Any]:

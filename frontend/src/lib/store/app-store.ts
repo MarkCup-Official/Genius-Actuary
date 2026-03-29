@@ -11,7 +11,8 @@ import type {
   User,
 } from '@/types'
 
-const defaultApiMode = (import.meta.env['VITE_API_MODE'] as ApiMode | undefined) ?? 'mock'
+const defaultApiMode =
+  (import.meta.env['VITE_API_MODE'] as ApiMode | undefined) ?? 'mock'
 
 interface AppStoreState {
   themeMode: ThemeMode
@@ -57,7 +58,8 @@ export const useAppStore = create<AppStoreState>()(
       setDisplayDensity: (displayDensity) => set({ displayDensity }),
       setApiMode: (apiMode) => set({ apiMode }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
-      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      toggleSidebar: () =>
+        set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setAuthSession: ({ accessToken, refreshToken, currentUser }) =>
         set({ accessToken, refreshToken, currentUser }),
       clearSession: () =>
@@ -70,8 +72,6 @@ export const useAppStore = create<AppStoreState>()(
         set({
           themeMode: settings.themeMode,
           locale: settings.language,
-          displayDensity: settings.displayDensity,
-          apiMode: settings.apiMode,
         }),
     }),
     {

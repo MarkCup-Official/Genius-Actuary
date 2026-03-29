@@ -64,6 +64,12 @@ function buildBackendSession(overrides: Partial<BackendSession> = {}): BackendSe
         input_params: {
           tuition: 12000,
         },
+        unit: 'USD',
+        result_value: 23000,
+        result_text: '23000',
+        result_payload: {},
+        error_margin: 'Exact deterministic evaluation over the provided parameters.',
+        notes: 'Calculated locally by the backend calculation adapter.',
         status: 'completed',
       },
     ],
@@ -85,8 +91,13 @@ function buildBackendSession(overrides: Partial<BackendSession> = {}): BackendSe
         chart_type: 'bar',
         title: 'Program cost comparison',
         spec: {
-          labels: ['Tuition', 'Housing', 'Travel'],
-          values: [12, 8, 3],
+          categories: ['Tuition', 'Housing', 'Travel'],
+          series: [
+            {
+              name: 'Cost',
+              data: [12, 8, 3],
+            },
+          ],
           unit: 'k USD',
         },
         notes: 'Backend preview artifact',
@@ -129,6 +140,8 @@ describe('genius backend contract mapping', () => {
     expect(session.mode).toBe('single-option')
     expect(session.questions[0]?.fieldType).toBe('single-choice')
     expect(session.calculations[0]?.formulaExpression).toBe('tuition + rent + travel')
+    expect(session.calculations[0]?.result).toBe('23000')
+    expect(session.calculations[0]?.units).toBe('USD')
     expect(session.lastInsight).toContain('viable')
   })
 
@@ -138,7 +151,8 @@ describe('genius backend contract mapping', () => {
     expect(report.summaryTitle).toContain('exchange')
     expect(report.highlights).toHaveLength(4)
     expect(report.charts[0]?.kind).toBe('bar')
-    expect(report.disclaimers[1]).toContain('API Key')
+    expect(report.calculations[0]?.result).toBe('23000')
+    expect(report.disclaimers[1]).toContain('图表')
   })
 
   it('translates progress and outgoing answers for the backend step route', () => {

@@ -11,7 +11,8 @@ export const resources = {
         anonymousUser: '访客用户',
         anonymousSession: '匿名分析会话',
         adapterFooterTitle: '已接入后端的前端工程',
-        adapterFooterDetail: '分析主链路已对接 FastAPI，会话通过浏览器 Cookie 隔离，无需额外 API Key。',
+        adapterFooterDetail:
+          '分析主链路已对接 FastAPI，会话通过浏览器 Cookie 隔离，无需额外 API Key。',
       },
       roles: {
         analyst: '分析员',
@@ -67,7 +68,7 @@ export const resources = {
         logs: '日志审计',
         files: '文件中心',
         dataviz: '数据可视化',
-        resources: '资源注册表',
+        resources: '历史分析记录',
         settings: '设置',
         profile: '个人资料',
         admin: '角色管理',
@@ -78,7 +79,8 @@ export const resources = {
         password: '密码',
         mfaCode: 'MFA 验证码',
         helper: '演示账号：analyst@geniusactuary.ai / password123 / 123456',
-        restHelper: '当前后端使用匿名 Cookie 会话。点击一次即可建立会话并进入工作台。',
+        restHelper:
+          '当前后端使用匿名 Cookie 会话。点击一次即可建立会话并进入工作台。',
         restDetail:
           '当前已接入本地 FastAPI 后端。分析会话通过浏览器 Cookie 识别，不需要额外填写 API Key 或 Bearer Token。',
         restAction: '连接后端并进入工作台',
@@ -153,24 +155,31 @@ export const resources = {
       analysis: {
         modeTitle: '选择分析模式',
         modeSubtitle: '先明确本轮分析的工作方式，再进入问题输入和结构化追问。',
-        modeGuide: '请先点选一个模式。选中后会高亮显示，并明确告诉你下一步要做什么。',
+        modeGuide:
+          '请先点选一个模式。选中后会高亮显示，并明确告诉你下一步要做什么。',
         modeSelected: '当前已选模式',
         modeActionSelect: '先选这个模式',
         modeActionContinue: '用这个模式继续',
         modeActionHint: '点选后会进入问题输入页，并生成对应的追问结构。',
         intakeTitle: '问题输入工作台',
-        intakeSubtitle: '把你的问题讲清楚，后端会根据描述决定后续追问与分析路径。',
+        intakeSubtitle:
+          '把你的问题讲清楚，后端会根据描述决定后续追问与分析路径。',
         clarifyTitle: '结构化补充信息',
-        clarifySubtitle: '逐条补齐关键事实、约束和偏好，让后端能更稳地推进分析。',
-        clarifyHint: '每个问题都写明了“为什么要问”。点击选项后会立即显示选中状态，你也可以自定义、跳过或标记不确定。',
+        clarifySubtitle:
+          '逐条补齐关键事实、约束和偏好，让后端能更稳地推进分析。',
+        clarifyHint:
+          '每个问题都写明了“为什么要问”。点击选项后会立即显示选中状态，你也可以自定义、跳过或标记不确定。',
         progressTitle: '分析进行中',
         progressSubtitle: '后端正在逐阶段整理事实、证据和报告内容。',
         reportTitle: '最终报告',
-        reportSubtitle: '报告区会把结论、依据、图表、计算与免责声明组织成完整阅读流。',
+        reportSubtitle:
+          '报告区会把结论、依据、图表、计算与免责声明组织成完整阅读流。',
         singleMode: '单项成本 / 风险分析',
         multiMode: '多选项决策参考',
-        singleDescription: '适合评估一个具体计划是否值得推进，重点看成本、风险、前提与执行条件。',
-        multiDescription: '适合比较多个方案的优劣和适配度，重点看权衡、偏好匹配与证据支持。',
+        singleDescription:
+          '适合评估一个具体计划是否值得推进，重点看成本、风险、前提与执行条件。',
+        multiDescription:
+          '适合比较多个方案的优劣和适配度，重点看权衡、偏好匹配与证据支持。',
         singleValueLens: ['成本', '风险', '约束', '假设'],
         multiValueLens: ['方案对比', '权衡取舍', '偏好匹配', '证据支撑'],
         startAnalysis: '开始分析',
@@ -181,16 +190,19 @@ export const resources = {
         customInput: '自定义补充',
         suggestions: '示例问题',
         problemStatementLabel: '问题描述',
-        problemStatementPlaceholder: '请描述你的决策场景、候选方案、核心约束和不确定因素。',
+        problemStatementPlaceholder:
+          '请描述你的决策场景、候选方案、核心约束和不确定因素。',
         switchMode: '切换模式',
         suggestionHint1: '尽量写清楚“要做什么决策、有哪些备选、你最在意什么”。',
-        suggestionHint2: '真实后端会根据问题自动生成追问，而不是前端硬编码流程。',
+        suggestionHint2:
+          '真实后端会根据问题自动生成追问，而不是前端硬编码流程。',
         suggestionHint3: '工作台始终保持统一的黑金视觉和稳定的分析节奏。',
         chooseOne: '请选择一个最接近的选项',
         chooseMany: '可多选，建议先选最重要的几项',
         selectedAnswer: '当前已选',
         reportEvidenceTitle: '依据与假设',
-        reportEvidenceHint: '请把事实、估算和推断分开理解，再决定是否执行不可逆动作。',
+        reportEvidenceHint:
+          '请把事实、估算和推断分开理解，再决定是否执行不可逆动作。',
         reportReopenClarification: '返回补充信息',
         reportCalculations: '计算结果',
         reportEvidenceTrail: '证据链',
@@ -227,8 +239,8 @@ export const resources = {
         subtitle: '统一的黑金图表系统，兼顾展示与导出。',
       },
       resources: {
-        title: '资源注册表',
-        subtitle: '通过通用 CRUD 页面快速适配新增后端资源。',
+        title: '历史分析记录',
+        subtitle: '查看当前浏览器下的分析记录与最近进度。',
       },
     },
   },
@@ -242,7 +254,8 @@ export const resources = {
         anonymousUser: 'Visitor',
         anonymousSession: 'Anonymous analysis session',
         adapterFooterTitle: 'Backend-connected frontend',
-        adapterFooterDetail: 'The main analysis flow is connected to FastAPI and isolated by browser cookie sessions.',
+        adapterFooterDetail:
+          'The main analysis flow is connected to FastAPI and isolated by browser cookie sessions.',
       },
       roles: {
         analyst: 'Analyst',
@@ -298,7 +311,7 @@ export const resources = {
         logs: 'Logs & Audit',
         files: 'File Manager',
         dataviz: 'Data Visualization',
-        resources: 'Resource Registry',
+        resources: 'Analysis History',
         settings: 'Settings',
         profile: 'Profile',
         admin: 'Role Management',
@@ -309,7 +322,8 @@ export const resources = {
         password: 'Password',
         mfaCode: 'MFA code',
         helper: 'Demo account: analyst@geniusactuary.ai / password123 / 123456',
-        restHelper: 'The current backend uses anonymous cookie-based sessions. Click once to enter the workspace.',
+        restHelper:
+          'The current backend uses anonymous cookie-based sessions. Click once to enter the workspace.',
         restDetail:
           'The local FastAPI backend is already wired in. Browser cookies identify the session, so no extra API key or Bearer token is required here.',
         restAction: 'Connect backend and enter workspace',
@@ -318,7 +332,8 @@ export const resources = {
       dashboard: {
         eyebrow: 'Overview',
         title: 'Decision overview',
-        subtitle: 'Recent analyses, signals, trends, activity, and quick actions.',
+        subtitle:
+          'Recent analyses, signals, trends, activity, and quick actions.',
         recentAnalyses: 'Recent analyses',
         activityPulse: 'Activity pulse',
         openReport: 'Open report',
@@ -364,7 +379,8 @@ export const resources = {
           },
           clarifyWaiting: {
             title: 'A clarification round is waiting',
-            detail: 'The graduate-school decision still needs funding certainty.',
+            detail:
+              'The graduate-school decision still needs funding certainty.',
           },
           fileIndexed: {
             title: 'Sensitivity file indexed',
@@ -372,7 +388,8 @@ export const resources = {
           },
           backendSync: {
             title: 'Backend contract synced',
-            detail: 'The frontend is now wired to the local FastAPI backend via cookie sessions.',
+            detail:
+              'The frontend is now wired to the local FastAPI backend via cookie sessions.',
           },
         },
         charts: {
@@ -383,28 +400,42 @@ export const resources = {
       },
       analysis: {
         modeTitle: 'Choose an analysis mode',
-        modeSubtitle: 'Select the workflow first, then move into intake and structured clarification.',
-        modeGuide: 'Select one mode first. The chosen card will highlight and make the next action explicit.',
+        modeSubtitle:
+          'Select the workflow first, then move into intake and structured clarification.',
+        modeGuide:
+          'Select one mode first. The chosen card will highlight and make the next action explicit.',
         modeSelected: 'Currently selected',
         modeActionSelect: 'Choose this mode',
         modeActionContinue: 'Use this mode',
-        modeActionHint: 'After selection, you will move into prompt intake and get a mode-specific clarification flow.',
+        modeActionHint:
+          'After selection, you will move into prompt intake and get a mode-specific clarification flow.',
         intakeTitle: 'Prompt intake workbench',
-        intakeSubtitle: 'Describe the problem clearly and let the backend decide the follow-up structure.',
+        intakeSubtitle:
+          'Describe the problem clearly and let the backend decide the follow-up structure.',
         clarifyTitle: 'Structured clarification',
-        clarifySubtitle: 'Complete the missing facts, constraints, and preferences before the backend continues.',
+        clarifySubtitle:
+          'Complete the missing facts, constraints, and preferences before the backend continues.',
         clarifyHint:
           'Each question explains why it matters. Clicking an option should immediately show a selected state, and you can still add custom context, skip, or mark it uncertain.',
         progressTitle: 'Analysis in progress',
-        progressSubtitle: 'The backend is currently organizing facts, evidence, and report content by stage.',
+        progressSubtitle:
+          'The backend is currently organizing facts, evidence, and report content by stage.',
         reportTitle: 'Final report',
-        reportSubtitle: 'The report area assembles conclusions, evidence, charts, calculations, and disclaimers into one reading flow.',
+        reportSubtitle:
+          'The report area assembles conclusions, evidence, charts, calculations, and disclaimers into one reading flow.',
         singleMode: 'Single option cost / risk',
         multiMode: 'Multi-option decision reference',
-        singleDescription: 'Use this when you need to judge whether one specific plan is worth pushing forward.',
-        multiDescription: 'Use this when you need to compare several paths and weigh trade-offs deliberately.',
+        singleDescription:
+          'Use this when you need to judge whether one specific plan is worth pushing forward.',
+        multiDescription:
+          'Use this when you need to compare several paths and weigh trade-offs deliberately.',
         singleValueLens: ['Cost', 'Risk', 'Constraints', 'Assumptions'],
-        multiValueLens: ['Comparison', 'Trade-offs', 'Preference fit', 'Evidence'],
+        multiValueLens: [
+          'Comparison',
+          'Trade-offs',
+          'Preference fit',
+          'Evidence',
+        ],
         startAnalysis: 'Start analysis',
         generateReport: 'Open final report',
         whyThisMatters: 'Why this matters',
@@ -413,26 +444,34 @@ export const resources = {
         customInput: 'Custom input',
         suggestions: 'Example prompts',
         problemStatementLabel: 'Problem statement',
-        problemStatementPlaceholder: 'Describe the decision, candidate options, key constraints, and uncertainty.',
+        problemStatementPlaceholder:
+          'Describe the decision, candidate options, key constraints, and uncertainty.',
         switchMode: 'Switch mode',
-        suggestionHint1: 'Describe the decision, the alternatives, and what matters most to you.',
-        suggestionHint2: 'The real backend generates the clarification steps instead of the frontend hardcoding them.',
-        suggestionHint3: 'The workspace keeps one consistent black-gold language across every module.',
+        suggestionHint1:
+          'Describe the decision, the alternatives, and what matters most to you.',
+        suggestionHint2:
+          'The real backend generates the clarification steps instead of the frontend hardcoding them.',
+        suggestionHint3:
+          'The workspace keeps one consistent black-gold language across every module.',
         chooseOne: 'Choose the single most fitting option',
         chooseMany: 'Multiple selection is allowed',
         selectedAnswer: 'Current selection',
         reportEvidenceTitle: 'Evidence & assumptions',
-        reportEvidenceHint: 'Separate facts, estimates, and inferences before making an irreversible move.',
+        reportEvidenceHint:
+          'Separate facts, estimates, and inferences before making an irreversible move.',
         reportReopenClarification: 'Back to clarification',
         reportCalculations: 'Calculation outputs',
         reportEvidenceTrail: 'Evidence trail',
-        reportFallback: 'The session exists, but the report bundle is not ready yet.',
+        reportFallback:
+          'The session exists, but the report bundle is not ready yet.',
         progressStageTitle: 'Stage progression',
-        progressReadyHint: 'The report core has converged. You can open the final reading flow now.',
+        progressReadyHint:
+          'The report core has converged. You can open the final reading flow now.',
       },
       settings: {
         title: 'Preferences & connectivity',
-        subtitle: 'Manage theme, language, notifications, API mode, and display settings.',
+        subtitle:
+          'Manage theme, language, notifications, API mode, and display settings.',
       },
       profile: {
         title: 'User profile',
@@ -444,23 +483,28 @@ export const resources = {
       },
       notifications: {
         title: 'Notifications',
-        subtitle: 'Real-time events, system alerts, and analysis progress signals.',
+        subtitle:
+          'Real-time events, system alerts, and analysis progress signals.',
       },
       logs: {
         title: 'Logs & audit',
-        subtitle: 'Traceable chain logs with filters, exports, and detail views.',
+        subtitle:
+          'Traceable chain logs with filters, exports, and detail views.',
       },
       files: {
         title: 'File manager',
-        subtitle: 'Upload, preview, and monitor reports, evidence, and attachments.',
+        subtitle:
+          'Upload, preview, and monitor reports, evidence, and attachments.',
       },
       dataviz: {
         title: 'Data visualization',
-        subtitle: 'Unified black-and-gold chart system with export-ready states.',
+        subtitle:
+          'Unified black-and-gold chart system with export-ready states.',
       },
       resources: {
-        title: 'Resource registry',
-        subtitle: 'Generic CRUD list, detail, and form generator for new backend resources.',
+        title: 'Analysis History',
+        subtitle:
+          'Review this browser’s saved analyses and their latest progress.',
       },
     },
   },

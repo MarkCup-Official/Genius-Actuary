@@ -126,9 +126,9 @@ class Settings:
                 os.getenv("SEARCH_EXTRA_SNIPPETS", "true").strip().lower()
                 not in {"false", "0", "no"}
             ),
-            chart_adapter=os.getenv("CHART_ADAPTER", "disabled").strip().lower(),
+            chart_adapter=os.getenv("CHART_ADAPTER", "structured").strip().lower(),
             calculation_mcp_enabled=(
-                os.getenv("CALCULATION_MCP_ENABLED", "false").strip().lower()
+                os.getenv("CALCULATION_MCP_ENABLED", "true").strip().lower()
                 in {"true", "1", "yes"}
             ),
             debug_username=os.getenv("DEBUG_USERNAME", "debug-admin"),

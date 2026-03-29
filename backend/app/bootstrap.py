@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
-from app.adapters.chart import DisabledChartAdapter, MockChartAdapter
+from app.adapters.calculation import DisabledCalculationAdapter, LocalCalculationAdapter
+from app.adapters.chart import DisabledChartAdapter, MockChartAdapter, StructuredChartAdapter
 from app.adapters.llm_analysis import MockAnalysisAdapter, OpenAICompatibleAnalysisAdapter
 from app.adapters.search import BraveSearchAdapter, MockSearchAdapter
 from app.config import Settings
@@ -67,14 +68,26 @@ def _create_search_adapter(settings: Settings) -> MockSearchAdapter | BraveSearc
     )
 
 
-def _create_chart_adapter(settings: Settings) -> MockChartAdapter | DisabledChartAdapter:
+def _create_chart_adapter(
+    settings: Settings,
+) -> MockChartAdapter | DisabledChartAdapter | StructuredChartAdapter:
     if settings.chart_adapter == "disabled":
         return DisabledChartAdapter()
     if settings.chart_adapter == "mock":
         return MockChartAdapter()
+    if settings.chart_adapter in {"structured", "local"}:
+        return StructuredChartAdapter()
     raise RuntimeError(
         f"Unsupported CHART_ADAPTER value: {settings.chart_adapter}."
     )
+
+
+def _create_calculation_adapter(
+    settings: Settings,
+) -> LocalCalculationAdapter | DisabledCalculationAdapter:
+    if settings.calculation_mcp_enabled:
+        return LocalCalculationAdapter()
+    return DisabledCalculationAdapter()
 
 
 def get_app_services() -> AppServices:
@@ -93,6 +106,7 @@ def get_app_services() -> AppServices:
             audit_log_service=audit_log_service,
             analysis_adapter=_create_analysis_adapter(settings),
             search_adapter=_create_search_adapter(settings),
+            calculation_adapter=_create_calculation_adapter(settings),
             chart_adapter=_create_chart_adapter(settings),
         )
         _services = AppServices(

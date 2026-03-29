@@ -53,6 +53,11 @@ class NoopSearchAdapter:
         return []
 
 
+class NoopCalculationAdapter:
+    def run(self, tasks):
+        return tasks
+
+
 class NoopChartAdapter:
     def build_preview(self, session):
         return []
@@ -67,6 +72,7 @@ def build_services():
         audit_log_service=audit_log_service,
         analysis_adapter=ExplodingAnalysisAdapter(),
         search_adapter=NoopSearchAdapter(),
+        calculation_adapter=NoopCalculationAdapter(),
         chart_adapter=NoopChartAdapter(),
     )
     return AppServices(

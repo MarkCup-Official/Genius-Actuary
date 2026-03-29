@@ -34,8 +34,8 @@ ANALYSIS_MODEL=MiniMax-M2.5
 SEARCH_ADAPTER=brave
 SEARCH_API_BASE_URL=https://api.search.brave.com/res/v1/web/search
 SEARCH_API_KEY=your_brave_key
-CHART_ADAPTER=disabled
-CALCULATION_MCP_ENABLED=false
+CHART_ADAPTER=structured
+CALCULATION_MCP_ENABLED=true
 ```
 
 MiniMax notes:
@@ -62,7 +62,8 @@ Debug console notes:
 - Python orchestrator main loop
 - Switchable analysis adapter: `mock` or OpenAI-compatible chat completions API
 - Switchable search adapter: `mock` or Brave Search API
-- Chart preview adapter can be disabled entirely
+- Local calculation MCP can evaluate deterministic formulas from AI-planned tasks
+- Structured chart MCP can turn completed calculation tasks into frontend-ready chart specs
 - Frontend-facing session APIs with stable response contracts
 - Cookie-based anonymous client isolation for web sessions
 - SQLite-based session persistence

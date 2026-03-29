@@ -68,6 +68,23 @@ class CalculationTask(BaseModel):
     objective: str
     formula_hint: str
     input_params: dict[str, Any] = Field(default_factory=dict)
+    unit: str = ""
+    result_value: float | None = None
+    result_text: str = ""
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+    error_margin: str = ""
+    notes: str = ""
+    status: str = "pending"
+
+
+class ChartTask(BaseModel):
+    task_id: str = Field(default_factory=lambda: str(uuid4()))
+    objective: str
+    chart_type: str
+    title: str
+    preferred_unit: str = ""
+    source_task_ids: list[str] = Field(default_factory=list)
+    notes: str = ""
     status: str = "pending"
 
 
@@ -101,6 +118,8 @@ class MajorConclusionItem(BaseModel):
 class AnalysisLoopPlan(BaseModel):
     clarification_questions: list[ClarificationQuestion] = Field(default_factory=list)
     search_tasks: list[SearchTask] = Field(default_factory=list)
+    calculation_tasks: list[CalculationTask] = Field(default_factory=list)
+    chart_tasks: list[ChartTask] = Field(default_factory=list)
     major_conclusions: list[MajorConclusionItem] = Field(default_factory=list)
     ready_for_report: bool = False
     reasoning_focus: str = ""
@@ -144,6 +163,7 @@ class AnalysisSession(BaseModel):
     answers: list[UserAnswer] = Field(default_factory=list)
     search_tasks: list[SearchTask] = Field(default_factory=list)
     calculation_tasks: list[CalculationTask] = Field(default_factory=list)
+    chart_tasks: list[ChartTask] = Field(default_factory=list)
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
     chart_artifacts: list[ChartArtifact] = Field(default_factory=list)
     major_conclusions: list[MajorConclusionItem] = Field(default_factory=list)

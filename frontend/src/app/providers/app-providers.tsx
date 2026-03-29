@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { type PropsWithChildren, useEffect, useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { Toaster } from 'sonner'
@@ -36,7 +35,6 @@ export function AppProviders({ children }: PropsWithChildren) {
             {children}
             <Toaster richColors position="top-right" />
           </RealtimeBridge>
-          <ReactQueryDevtools initialIsOpen={false} />
         </ThemeProvider>
       </QueryClientProvider>
     </I18nextProvider>

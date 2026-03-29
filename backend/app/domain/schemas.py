@@ -5,6 +5,8 @@ from app.domain.models import (
     AuditLogEntry,
     AnalysisReport,
     AnalysisSession,
+    CalculationTask,
+    ChartTask,
     ClarificationQuestion,
     EvidenceItem,
     MajorConclusionItem,
@@ -91,6 +93,8 @@ class SessionStepResponse(BaseModel):
     error_message: str | None = None
     pending_questions: list[ClarificationQuestion] = Field(default_factory=list)
     pending_search_tasks: list[SearchTask] = Field(default_factory=list)
+    pending_calculation_tasks: list[CalculationTask] = Field(default_factory=list)
+    pending_chart_tasks: list[ChartTask] = Field(default_factory=list)
     evidence_items: list[EvidenceItem] = Field(default_factory=list)
     major_conclusions: list[MajorConclusionItem] = Field(default_factory=list)
     report_preview: AnalysisReport | None = None

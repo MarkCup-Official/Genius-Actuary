@@ -16,7 +16,9 @@ export function RequireAuth() {
   const meQuery = useQuery({
     queryKey: ['auth', 'me', accessToken],
     queryFn: adapter.auth.me,
-    enabled: Boolean(accessToken && !currentUser),
+    enabled: Boolean(
+      accessToken && (!currentUser || currentUser.id === 'backend-anonymous'),
+    ),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -36,7 +38,7 @@ export function RequireAuth() {
 
   if (meQuery.isLoading && !currentUser) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-app-bg p-8">
+      <div className="bg-app-bg flex min-h-screen items-center justify-center p-8">
         <Skeleton className="h-28 w-72 rounded-[24px]" />
       </div>
     )

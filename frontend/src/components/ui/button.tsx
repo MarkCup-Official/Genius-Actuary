@@ -17,7 +17,7 @@ const variantClasses: Record<ButtonVariant, string> = {
     'border border-border-subtle bg-app-bg-elevated text-text-primary hover:border-border-strong hover:bg-panel-strong',
   ghost: 'text-text-secondary hover:bg-white/5 hover:text-text-primary',
   danger:
-    'border border-[rgba(197,109,99,0.45)] bg-[rgba(197,109,99,0.14)] text-[#f7d4cf] hover:bg-[rgba(197,109,99,0.2)]',
+    'border border-[rgba(197,109,99,0.58)] bg-[rgba(197,109,99,0.82)] text-[#1c0f0e] hover:bg-[rgba(197,109,99,0.9)]',
 }
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -26,30 +26,32 @@ const sizeClasses: Record<ButtonSize, string> = {
   lg: 'h-12 rounded-full px-6 text-base',
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, size = 'md', style, variant = 'primary', ...props },
-  ref,
-) {
-  const mergedStyle =
-    variant === 'primary'
-      ? {
-          backgroundColor: 'var(--gold-primary)',
-          backgroundImage: 'var(--gradient-gold)',
-          ...style,
-        }
-      : style
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  function Button(
+    { className, size = 'md', style, variant = 'primary', ...props },
+    ref,
+  ) {
+    const mergedStyle =
+      variant === 'primary'
+        ? {
+            backgroundColor: 'var(--gold-primary)',
+            backgroundImage: 'var(--gradient-gold)',
+            ...style,
+          }
+        : style
 
-  return (
-    <button
-      ref={ref}
-      style={mergedStyle}
-      className={cn(
-        'interactive-lift inline-flex items-center justify-center gap-2 font-medium transition duration-200 disabled:pointer-events-none disabled:opacity-60 disabled:brightness-75',
-        variantClasses[variant],
-        sizeClasses[size],
-        className,
-      )}
-      {...props}
-    />
-  )
-})
+    return (
+      <button
+        ref={ref}
+        style={mergedStyle}
+        className={cn(
+          'interactive-lift inline-flex items-center justify-center gap-2 font-medium transition duration-200 disabled:pointer-events-none disabled:opacity-60 disabled:brightness-75',
+          variantClasses[variant],
+          sizeClasses[size],
+          className,
+        )}
+        {...props}
+      />
+    )
+  },
+)

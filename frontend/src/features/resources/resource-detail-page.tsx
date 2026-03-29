@@ -16,6 +16,7 @@ export function ResourceDetailPage() {
   const adapter = useApiAdapter()
   const definition = getResourceDefinition(resourceKey)
   const isZh = i18n.language.startsWith('zh')
+  const isHistoryPage = resourceKey === 'analyses'
 
   const recordQuery = useQuery({
     queryKey: ['resources', resourceKey, recordId],
@@ -25,13 +26,26 @@ export function ResourceDetailPage() {
 
   const text = {
     unknownTitle: isZh ? '未知资源' : 'Unknown resource',
-    unknownDescription: isZh ? '这个资源键还没有注册。' : 'This resource key is not registered yet.',
-    eyebrow: isZh ? '详情' : 'Detail',
+    unknownDescription: isZh
+      ? '这个资源键还没有注册。'
+      : 'This resource key is not registered yet.',
+    eyebrow: isHistoryPage
+      ? isZh
+        ? '分析记录'
+        : 'Analysis record'
+      : isZh
+        ? '详情'
+        : 'Detail',
     editRecord: isZh ? '编辑记录' : 'Edit record',
   }
 
   if (!definition) {
-    return <EmptyState title={text.unknownTitle} description={text.unknownDescription} />
+    return (
+      <EmptyState
+        title={text.unknownTitle}
+        description={text.unknownDescription}
+      />
+    )
   }
 
   const record = recordQuery.data
@@ -43,18 +57,30 @@ export function ResourceDetailPage() {
         title={record?.title ?? definition.title}
         description={record?.subtitle ?? definition.description}
         actions={
-          <Button variant="secondary" onClick={() => void navigate(`/resources/${resourceKey}/${recordId}/edit`)}>
-            {text.editRecord}
-          </Button>
+          !isHistoryPage ? (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void navigate(`/resources/${resourceKey}/${recordId}/edit`)
+              }
+            >
+              {text.editRecord}
+            </Button>
+          ) : undefined
         }
       />
 
       {record ? (
         <Card className="grid gap-4 p-6 md:grid-cols-2">
           {Object.entries(record).map(([key, value]) => (
-            <div key={key} className="rounded-[20px] border border-border-subtle bg-app-bg-elevated p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-text-muted">{key}</p>
-              <p className="mt-2 text-sm text-text-primary">{String(value)}</p>
+            <div
+              key={key}
+              className="border-border-subtle bg-app-bg-elevated rounded-[20px] border p-4"
+            >
+              <p className="text-text-muted text-xs tracking-[0.18em] uppercase">
+                {key}
+              </p>
+              <p className="text-text-primary mt-2 text-sm">{String(value)}</p>
             </div>
           ))}
         </Card>

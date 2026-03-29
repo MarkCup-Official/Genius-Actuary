@@ -1,13 +1,15 @@
+import json
 import re
 from typing import Protocol
 
-from app.adapters.chart import DisabledChartAdapter, MockChartAdapter
 from app.adapters.llm_analysis import LLMInvocationError
-from app.adapters.search import BraveSearchAdapter, MockSearchAdapter
 from app.domain.models import (
     AnalysisLoopPlan,
     AnalysisReport,
     AnalysisSession,
+    CalculationTask,
+    ChartArtifact,
+    ChartTask,
     ClarificationQuestion,
     MajorConclusionItem,
     NextAction,
@@ -34,6 +36,10 @@ class SearchAdapter(Protocol):
     def run(self, tasks: list[SearchTask]): ...
 
 
+class CalculationAdapter(Protocol):
+    def run(self, tasks: list[CalculationTask]): ...
+
+
 class ChartAdapter(Protocol):
     def build_preview(self, session: AnalysisSession): ...
 
@@ -45,12 +51,14 @@ class AnalysisOrchestrator:
         audit_log_service: AuditLogService,
         analysis_adapter: AnalysisAdapter,
         search_adapter: SearchAdapter,
+        calculation_adapter: CalculationAdapter,
         chart_adapter: ChartAdapter,
     ) -> None:
         self.repository = repository
         self.audit_log_service = audit_log_service
         self.analysis_adapter = analysis_adapter
         self.search_adapter = search_adapter
+        self.calculation_adapter = calculation_adapter
         self.chart_adapter = chart_adapter
 
     def supported_modes(self) -> list[str]:
@@ -147,32 +155,67 @@ class AnalysisOrchestrator:
                 return self._apply_loop_plan(session)
 
             if session.status == SessionStatus.ANALYZING:
-                pending_tasks = [task for task in session.search_tasks if task.status != "completed"]
-                if pending_tasks:
-                    session.activity_status = "running_search_and_chart_pipeline"
+                pending_search_tasks = [
+                    task for task in session.search_tasks if self._task_is_pending(task.status)
+                ]
+                pending_calculation_tasks = [
+                    task for task in session.calculation_tasks if self._task_is_pending(task.status)
+                ]
+                pending_chart_tasks = [
+                    task for task in session.chart_tasks if self._task_is_pending(task.status)
+                ]
+                if pending_search_tasks or pending_calculation_tasks or pending_chart_tasks:
+                    session.activity_status = "running_mcp_pipeline"
                     session.events.append(
                         SessionEvent(
                             kind="search_execution_started",
                             payload={
-                                "pending_task_count": len(pending_tasks),
-                                "task_ids": [task.task_id for task in pending_tasks],
+                                "pending_search_task_count": len(pending_search_tasks),
+                                "pending_search_task_ids": [task.task_id for task in pending_search_tasks],
+                                "pending_calculation_task_count": len(pending_calculation_tasks),
+                                "pending_calculation_task_ids": [
+                                    task.task_id for task in pending_calculation_tasks
+                                ],
+                                "pending_chart_task_count": len(pending_chart_tasks),
+                                "pending_chart_task_ids": [task.task_id for task in pending_chart_tasks],
                             },
                         )
                     )
                     self.repository.save(session)
 
-                    session.evidence_items.extend(self.search_adapter.run(pending_tasks))
-                    session.chart_artifacts = self.chart_adapter.build_preview(session)
+                    if pending_search_tasks:
+                        session.evidence_items.extend(self.search_adapter.run(pending_search_tasks))
+                    if pending_calculation_tasks:
+                        self.calculation_adapter.run(pending_calculation_tasks)
+                    new_chart_artifacts: list[ChartArtifact] = []
+                    if pending_chart_tasks:
+                        new_chart_artifacts = self.chart_adapter.build_preview(session)
+                    added_charts = self._merge_chart_artifacts(session, new_chart_artifacts)
                     session.events.append(
                         SessionEvent(
                             kind="mcp_round_completed",
                             payload={
                                 "evidence_count": len(session.evidence_items),
+                                "completed_calculation_count": len(
+                                    [
+                                        task
+                                        for task in pending_calculation_tasks
+                                        if task.status == "completed"
+                                    ]
+                                ),
+                                "failed_calculation_count": len(
+                                    [
+                                        task
+                                        for task in pending_calculation_tasks
+                                        if task.status == "failed"
+                                    ]
+                                ),
                                 "chart_count": len(session.chart_artifacts),
+                                "new_chart_count": len(added_charts),
                             },
                         )
                     )
-                    return self._apply_loop_plan(session, action="EVIDENCE_GATHERED")
+                    return self._apply_loop_plan(session, action="MCP_ROUND_COMPLETED")
 
                 return self._apply_loop_plan(session)
 
@@ -340,6 +383,8 @@ class AnalysisOrchestrator:
             session.deferred_follow_up_question_count = len(candidate_questions)
             new_questions: list[ClarificationQuestion] = []
             new_search_tasks: list[SearchTask] = []
+            new_calculation_tasks: list[CalculationTask] = []
+            new_chart_tasks: list[ChartTask] = []
             new_conclusions = self._merge_conclusions(session, plan.major_conclusions)
             plan.ready_for_report = True
             session.last_stop_reason = (
@@ -352,6 +397,11 @@ class AnalysisOrchestrator:
             session.follow_up_budget_exhausted = False
             session.deferred_follow_up_question_count = 0
             new_search_tasks = self._merge_search_tasks(session, plan.search_tasks)
+            new_calculation_tasks = self._merge_calculation_tasks(
+                session,
+                plan.calculation_tasks,
+            )
+            new_chart_tasks = self._merge_chart_tasks(session, plan.chart_tasks)
             new_conclusions = self._merge_conclusions(session, plan.major_conclusions)
 
         session.events.append(
@@ -362,6 +412,8 @@ class AnalysisOrchestrator:
                     "new_question_count": len(new_questions),
                     "deferred_question_count": session.deferred_follow_up_question_count,
                     "new_search_task_count": len(new_search_tasks),
+                    "new_calculation_task_count": len(new_calculation_tasks),
+                    "new_chart_task_count": len(new_chart_tasks),
                     "new_conclusion_count": len(new_conclusions),
                     "ready_for_report": plan.ready_for_report,
                     "follow_up_budget_exhausted": session.follow_up_budget_exhausted,
@@ -374,24 +426,27 @@ class AnalysisOrchestrator:
         )
 
         next_action = NextAction.PREVIEW_REPORT
-        prompt_to_user = "当前信息已经足够，系统可以进入最终报告阶段。"
+        prompt_to_user = "The current information is sufficient to move into final report generation."
 
         if new_questions:
             session.status = SessionStatus.CLARIFYING
             session.activity_status = "waiting_for_user_clarification_answers"
             next_action = NextAction.ASK_USER
             prompt_to_user = "系统识别到仍有高价值缺口，请继续回答新一轮追问。"
-        elif new_search_tasks:
+        elif new_search_tasks or new_calculation_tasks or new_chart_tasks:
             session.status = SessionStatus.ANALYZING
-            session.activity_status = "waiting_for_search_execution"
+            session.activity_status = "waiting_for_mcp_execution"
             next_action = NextAction.RUN_MCP
-            prompt_to_user = "系统已规划新的联网查证任务，先执行 MCP 再继续下一轮分析。"
+            prompt_to_user = (
+                "The backend planned search, calculation, or chart tasks. "
+                "Run the MCP pipeline before the next analysis round."
+            )
         else:
             session.status = SessionStatus.READY_FOR_REPORT
             session.activity_status = "ready_for_report_generation"
             if not session.last_stop_reason:
                 session.last_stop_reason = (
-                    "No additional clarification or external search tasks were generated."
+                    "No additional clarification, calculation, search, or chart tasks were generated."
                 )
 
         self.repository.save(session)
@@ -404,6 +459,8 @@ class AnalysisOrchestrator:
                 "new_question_count": str(len(new_questions)),
                 "deferred_question_count": str(session.deferred_follow_up_question_count),
                 "new_search_task_count": str(len(new_search_tasks)),
+                "new_calculation_task_count": str(len(new_calculation_tasks)),
+                "new_chart_task_count": str(len(new_chart_tasks)),
                 "new_conclusion_count": str(len(new_conclusions)),
                 "ready_for_report": str(plan.ready_for_report).lower(),
                 "follow_up_budget_exhausted": str(session.follow_up_budget_exhausted).lower(),
@@ -442,7 +499,13 @@ class AnalysisOrchestrator:
                 question for question in session.clarification_questions if not question.answered
             ],
             pending_search_tasks=[
-                task for task in session.search_tasks if task.status != "completed"
+                task for task in session.search_tasks if self._task_is_pending(task.status)
+            ],
+            pending_calculation_tasks=[
+                task for task in session.calculation_tasks if self._task_is_pending(task.status)
+            ],
+            pending_chart_tasks=[
+                task for task in session.chart_tasks if self._task_is_pending(task.status)
             ],
             evidence_items=session.evidence_items,
             major_conclusions=session.major_conclusions,
@@ -520,6 +583,87 @@ class AnalysisOrchestrator:
         return added
 
     @staticmethod
+    def _merge_calculation_tasks(
+        session: AnalysisSession,
+        tasks: list[CalculationTask],
+    ) -> list[CalculationTask]:
+        existing = {
+            (
+                AnalysisOrchestrator._normalize_text(task.objective),
+                AnalysisOrchestrator._normalize_text(task.formula_hint),
+                AnalysisOrchestrator._serialize_json(task.input_params),
+            )
+            for task in session.calculation_tasks
+        }
+        added: list[CalculationTask] = []
+        for task in tasks:
+            key = (
+                AnalysisOrchestrator._normalize_text(task.objective),
+                AnalysisOrchestrator._normalize_text(task.formula_hint),
+                AnalysisOrchestrator._serialize_json(task.input_params),
+            )
+            if key in existing:
+                continue
+            session.calculation_tasks.append(task)
+            added.append(task)
+            existing.add(key)
+        return added
+
+    @staticmethod
+    def _merge_chart_tasks(
+        session: AnalysisSession,
+        tasks: list[ChartTask],
+    ) -> list[ChartTask]:
+        existing = {
+            (
+                AnalysisOrchestrator._normalize_text(task.chart_type),
+                AnalysisOrchestrator._normalize_text(task.title),
+                AnalysisOrchestrator._normalize_text(task.objective),
+                AnalysisOrchestrator._serialize_json(task.source_task_ids),
+            )
+            for task in session.chart_tasks
+        }
+        added: list[ChartTask] = []
+        for task in tasks:
+            key = (
+                AnalysisOrchestrator._normalize_text(task.chart_type),
+                AnalysisOrchestrator._normalize_text(task.title),
+                AnalysisOrchestrator._normalize_text(task.objective),
+                AnalysisOrchestrator._serialize_json(task.source_task_ids),
+            )
+            if key in existing:
+                continue
+            session.chart_tasks.append(task)
+            added.append(task)
+            existing.add(key)
+        return added
+
+    @staticmethod
+    def _merge_chart_artifacts(
+        session: AnalysisSession,
+        artifacts: list[ChartArtifact],
+    ) -> list[ChartArtifact]:
+        existing = {
+            (
+                AnalysisOrchestrator._normalize_text(artifact.chart_type),
+                AnalysisOrchestrator._normalize_text(artifact.title),
+            )
+            for artifact in session.chart_artifacts
+        }
+        added: list[ChartArtifact] = []
+        for artifact in artifacts:
+            key = (
+                AnalysisOrchestrator._normalize_text(artifact.chart_type),
+                AnalysisOrchestrator._normalize_text(artifact.title),
+            )
+            if key in existing:
+                continue
+            session.chart_artifacts.append(artifact)
+            added.append(artifact)
+            existing.add(key)
+        return added
+
+    @staticmethod
     def _merge_conclusions(
         session: AnalysisSession,
         conclusions: list[MajorConclusionItem],
@@ -542,6 +686,15 @@ class AnalysisOrchestrator:
     def _normalize_text(value: str) -> str:
         normalized = re.sub(r"[\W_]+", " ", value.lower(), flags=re.UNICODE)
         return " ".join(normalized.split())
+
+    @staticmethod
+    def _serialize_json(value: object) -> str:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+
+    @staticmethod
+    def _task_is_pending(status: str) -> bool:
+        normalized = status.strip().lower()
+        return normalized not in {"completed", "failed", "skipped", "cancelled"}
 
     @staticmethod
     def _question_signature(question: ClarificationQuestion) -> str:

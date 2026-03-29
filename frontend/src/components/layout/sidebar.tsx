@@ -1,13 +1,4 @@
-import {
-  Bell,
-  ChartColumnIncreasing,
-  ClipboardPenLine,
-  FileStack,
-  LayoutDashboard,
-  Settings,
-  UserRound,
-  Workflow,
-} from 'lucide-react'
+import { ClipboardPenLine, Settings, UserRound, Workflow } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -15,11 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils/cn'
 
 const navItems = [
-  { to: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
   { to: '/analysis/modes', key: 'analyze', icon: ClipboardPenLine },
-  { to: '/notifications', key: 'notifications', icon: Bell },
-  { to: '/files', key: 'files', icon: FileStack },
-  { to: '/dataviz', key: 'dataviz', icon: ChartColumnIncreasing },
   { to: '/resources/analyses', key: 'resources', icon: Workflow },
   { to: '/settings', key: 'settings', icon: Settings },
   { to: '/profile', key: 'profile', icon: UserRound },
@@ -27,11 +14,20 @@ const navItems = [
 
 interface SidebarProps {
   collapsed: boolean
-  unreadCount: number
 }
 
-export function Sidebar({ collapsed, unreadCount }: SidebarProps) {
-  const { t } = useTranslation()
+export function Sidebar({ collapsed }: SidebarProps) {
+  const { i18n, t } = useTranslation()
+  const isZh = i18n.language.startsWith('zh')
+  const title = 'Genius Actuary'
+  const tagline = isZh ? '您的私人精算师' : 'Your private actuary'
+  const getNavLabel = (key: (typeof navItems)[number]['key']) => {
+    if (key === 'resources') {
+      return isZh ? '历史分析记录' : 'Analysis History'
+    }
+
+    return t(`nav.${key}`)
+  }
 
   return (
     <aside
@@ -42,11 +38,11 @@ export function Sidebar({ collapsed, unreadCount }: SidebarProps) {
     >
       <div className="space-y-6">
         <div className="gold-hairline space-y-2 px-3 pb-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gold-primary">Genius Actuary</p>
+          <p className="text-gold-primary text-xs font-semibold tracking-[0.22em] uppercase">
+            {title}
+          </p>
           {!collapsed ? (
-            <p className="text-sm leading-6 text-text-secondary">
-              {t('app.tagline')}
-            </p>
+            <p className="text-text-secondary text-sm leading-6">{tagline}</p>
           ) : null}
         </div>
 
@@ -59,9 +55,9 @@ export function Sidebar({ collapsed, unreadCount }: SidebarProps) {
                 to={item.to}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sm text-text-secondary transition',
+                    'text-text-secondary flex items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-sm transition',
                     isActive
-                      ? 'border-border-strong bg-[rgba(212,175,55,0.12)] text-text-primary'
+                      ? 'border-border-strong text-text-primary bg-[rgba(212,175,55,0.12)]'
                       : 'hover:border-border-subtle hover:bg-app-bg-elevated hover:text-text-primary',
                   )
                 }
@@ -69,10 +65,10 @@ export function Sidebar({ collapsed, unreadCount }: SidebarProps) {
                 <Icon className="size-5 shrink-0" />
                 {!collapsed ? (
                   <>
-                    <span className="truncate">{t(`nav.${item.key}`)}</span>
-                    {item.key === 'notifications' && unreadCount > 0 ? (
+                    <span className="truncate">{getNavLabel(item.key)}</span>
+                    {item.key === 'analyze' ? (
                       <Badge tone="gold" className="ml-auto">
-                        {unreadCount}
+                        {isZh ? '推荐' : 'Recommended'}
                       </Badge>
                     ) : null}
                   </>
@@ -82,15 +78,6 @@ export function Sidebar({ collapsed, unreadCount }: SidebarProps) {
           })}
         </nav>
       </div>
-
-      {!collapsed ? (
-        <div className="rounded-[22px] border border-border-subtle bg-app-bg-elevated p-4">
-          <p className="text-sm font-semibold text-text-primary">{t('app.adapterFooterTitle')}</p>
-          <p className="mt-2 text-xs leading-5 text-text-secondary">
-            {t('app.adapterFooterDetail')}
-          </p>
-        </div>
-      ) : null}
     </aside>
   )
 }

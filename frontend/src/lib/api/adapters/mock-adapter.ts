@@ -1,11 +1,14 @@
 import { mockRealtimeBus } from '@/lib/mock/realtime-bus'
 import {
+  clearBrowserAccount,
+  createBrowserBoundUser,
+} from '@/lib/auth/browser-account'
+import {
   analysisModes,
   buildDashboardOverview,
   buildDataVizBundle,
   buildScenarioBundle,
   createMockDatabase,
-  users,
 } from '@/lib/mock/data'
 import type { ApiAdapter } from '@/lib/api/adapters/base'
 import type { BackendSession } from '@/lib/api/adapters/genius-backend'
@@ -81,69 +84,105 @@ function pushLog(entry: AuditLogEntry) {
 }
 
 function sessionSummary(session: AnalysisSession) {
-  const { id, mode, problemStatement, status, createdAt, updatedAt, lastInsight } = session
-  return { id, mode, problemStatement, status, createdAt, updatedAt, lastInsight }
+  const {
+    id,
+    mode,
+    problemStatement,
+    status,
+    createdAt,
+    updatedAt,
+    lastInsight,
+  } = session
+  return {
+    id,
+    mode,
+    problemStatement,
+    status,
+    createdAt,
+    updatedAt,
+    lastInsight,
+  }
+}
+
+function ensureMockBrowserUser() {
+  const browserUser = createBrowserBoundUser()
+  const existingUser = db.users.find(
+    (candidate) => candidate.id === browserUser.id,
+  )
+
+  if (existingUser) {
+    existingUser.name = browserUser.name
+    existingUser.email = browserUser.email
+    existingUser.title = browserUser.title
+    existingUser.locale = browserUser.locale
+    existingUser.roles = browserUser.roles
+    existingUser.lastActiveAt = browserUser.lastActiveAt
+    return existingUser
+  }
+
+  db.users.unshift(browserUser)
+  return browserUser
 }
 
 function resolveCurrentUser() {
-  return useAppStore.getState().currentUser ?? users[0]
+  return useAppStore.getState().currentUser ?? ensureMockBrowserUser()
 }
 
 function resourceRecords(resourceKey: string): ResourceRecord[] {
   const baseRecords = (() => {
     switch (resourceKey) {
-    case 'analyses':
-      return db.sessions.map((session) => ({
-        id: session.id,
-        title: session.problemStatement,
-        subtitle: session.mode,
-        status: session.status,
-        updatedAt: session.updatedAt,
-        createdAt: session.createdAt,
-      }))
-    case 'users':
-      return db.users.map((user) => ({
-        id: user.id,
-        title: user.name,
-        subtitle: user.email,
-        status: user.roles.join(', '),
-        updatedAt: user.lastActiveAt,
-        titleValue: user.title,
-      }))
-    case 'roles':
-      return db.roles.map((role) => ({
-        id: role.id,
-        title: role.name,
-        subtitle: role.description,
-        status: `${role.memberCount} members`,
-        updatedAt: nowIso(),
-      }))
-    case 'notifications':
-      return db.notifications.map((notification) => ({
-        id: notification.id,
-        title: notification.title,
-        subtitle: notification.message,
-        status: notification.read ? 'read' : 'unread',
-        updatedAt: notification.createdAt,
-      }))
-    case 'logs':
-      return db.logs.map((log) => ({
-        id: log.id,
-        title: log.action,
-        subtitle: log.summary,
-        status: log.status,
-        updatedAt: log.createdAt,
-      }))
-    case 'files':
-      return db.files.map((file) => ({
-        id: file.id,
-        title: file.name,
-        subtitle: file.mime,
-        status: file.status,
-        updatedAt: file.createdAt,
-      }))
-    default:
-      return []
+      case 'analyses':
+        return db.sessions.map((session) => ({
+          id: session.id,
+          title: session.problemStatement,
+          subtitle: session.mode,
+          status: session.status,
+          updatedAt: session.updatedAt,
+          createdAt: session.createdAt,
+        }))
+      case 'users':
+        return db.users.map((user) => ({
+          id: user.id,
+          title: user.name,
+          subtitle: user.email,
+          status: user.roles.join(', '),
+          updatedAt: user.lastActiveAt,
+          titleValue: user.title,
+        }))
+      case 'roles':
+        return db.roles.map((role) => ({
+          id: role.id,
+          title: role.name,
+          subtitle: role.description,
+          status: `${role.memberCount} members`,
+          updatedAt: nowIso(),
+        }))
+      case 'notifications':
+        return db.notifications.map((notification) => ({
+          id: notification.id,
+          title: notification.title,
+          subtitle: notification.message,
+          status: notification.read ? 'read' : 'unread',
+          updatedAt: notification.createdAt,
+        }))
+      case 'logs':
+        return db.logs.map((log) => ({
+          id: log.id,
+          title: log.action,
+          subtitle: log.summary,
+          status: log.status,
+          updatedAt: log.createdAt,
+        }))
+      case 'files':
+        return db.files.map((file) => ({
+          id: file.id,
+          title: file.name,
+          subtitle: file.mime,
+          status: file.status,
+          updatedAt: file.createdAt,
+        }))
+      default:
+        return []
     }
   })()
 
@@ -183,7 +222,10 @@ function findSession(sessionId: string) {
   return session
 }
 
-function phaseStatus(cursor: number, index: number): AnalysisProgress['stages'][number]['status'] {
+function phaseStatus(
+  cursor: number,
+  index: number,
+): AnalysisProgress['stages'][number]['status'] {
   if (index < cursor) {
     return 'completed'
   }
@@ -201,25 +243,18 @@ function toDebugMode(mode: AnalysisSession['mode']): BackendSession['mode'] {
 
 export const mockApiAdapter: ApiAdapter = {
   auth: {
-    async login(payload) {
+    async login() {
       await wait()
 
-      if (
-        payload.email !== 'analyst@geniusactuary.ai' ||
-        payload.password !== 'password123' ||
-        payload.mfaCode !== '123456'
-      ) {
-        throw new Error('Invalid demo credentials.')
-      }
-
       return {
-        accessToken: 'mock_access_token',
-        refreshToken: 'mock_refresh_token',
-        user: db.users[0],
+        accessToken: 'mock_cookie_session',
+        refreshToken: 'mock_cookie_session',
+        user: ensureMockBrowserUser(),
       }
     },
     async logout() {
       await wait(100)
+      clearBrowserAccount()
     },
     async me() {
       await wait(120)
@@ -227,13 +262,16 @@ export const mockApiAdapter: ApiAdapter = {
     },
     async deletePersonalData() {
       await wait(120)
+      clearBrowserAccount()
       const deletedSessionCount = db.sessions.length
       db.sessions = []
       db.logs = []
       db.notifications = []
       db.files = []
       Object.keys(db.reports).forEach((key) => delete db.reports[key])
-      Object.keys(db.progressCursor).forEach((key) => delete db.progressCursor[key])
+      Object.keys(db.progressCursor).forEach(
+        (key) => delete db.progressCursor[key],
+      )
       return { deletedSessionCount }
     },
   },
@@ -253,15 +291,25 @@ export const mockApiAdapter: ApiAdapter = {
     async list(meta) {
       await wait()
       const filtered = db.sessions.filter((session) =>
-        matchQuery(`${session.problemStatement} ${session.lastInsight}`, meta?.q),
+        matchQuery(
+          `${session.problemStatement} ${session.lastInsight}`,
+          meta?.q,
+        ),
       )
-      return paginate(filtered.map((session) => ({ ...session })), meta)
+      return paginate(
+        filtered.map((session) => ({ ...session })),
+        meta,
+      )
     },
     async create(payload) {
       await wait()
 
       const sessionId = createId('sess')
-      const bundle = buildScenarioBundle(sessionId, payload.problemStatement, payload.mode)
+      const bundle = buildScenarioBundle(
+        sessionId,
+        payload.problemStatement,
+        payload.mode,
+      )
       const session: AnalysisSession = {
         id: sessionId,
         mode: payload.mode,
@@ -274,7 +322,8 @@ export const mockApiAdapter: ApiAdapter = {
         followUpExtensionsUsed: 0,
         followUpBudgetExhausted: false,
         deferredFollowUpQuestionCount: 0,
-        lastInsight: 'The first clarification round focuses on constraints and success criteria.',
+        lastInsight:
+          'The first clarification round focuses on constraints and success criteria.',
         questions: bundle.questions,
         answers: [],
         searchTasks: bundle.searchTasks,
@@ -313,7 +362,8 @@ export const mockApiAdapter: ApiAdapter = {
       session.answers = payload.answers
       session.status = 'ANALYZING'
       session.updatedAt = nowIso()
-      session.lastInsight = 'Inputs accepted. Evidence stitching and calculation stages are underway.'
+      session.lastInsight =
+        'Inputs accepted. Evidence stitching and calculation stages are underway.'
       db.progressCursor[session.id] = 0
 
       pushNotification({
@@ -351,7 +401,8 @@ export const mockApiAdapter: ApiAdapter = {
         {
           id: 'understand',
           title: 'Normalize context',
-          description: 'Consolidating user facts, constraints, and prior answers.',
+          description:
+            'Consolidating user facts, constraints, and prior answers.',
         },
         {
           id: 'search',
@@ -366,18 +417,23 @@ export const mockApiAdapter: ApiAdapter = {
         {
           id: 'compose',
           title: 'Compose report',
-          description: 'Rendering markdown, KPI blocks, charts, and disclaimer sections.',
+          description:
+            'Rendering markdown, KPI blocks, charts, and disclaimer sections.',
         },
       ]
 
       if (session.status === 'ANALYZING') {
-        db.progressCursor[session.id] = Math.min((db.progressCursor[session.id] ?? 0) + 1, stages.length)
+        db.progressCursor[session.id] = Math.min(
+          (db.progressCursor[session.id] ?? 0) + 1,
+          stages.length,
+        )
         const cursor = db.progressCursor[session.id]
 
         if (cursor >= stages.length) {
           session.status = 'COMPLETED'
           session.updatedAt = nowIso()
-          session.lastInsight = 'Final report and chart artifacts are ready for review.'
+          session.lastInsight =
+            'Final report and chart artifacts are ready for review.'
 
           pushNotification({
             id: createId('n'),
@@ -397,7 +453,8 @@ export const mockApiAdapter: ApiAdapter = {
             ipAddress: 'mock',
             createdAt: nowIso(),
             status: 'success',
-            summary: 'Completed staged analysis and assembled final report bundle.',
+            summary:
+              'Completed staged analysis and assembled final report bundle.',
             metadata: {
               session: session.id,
             },
@@ -419,7 +476,8 @@ export const mockApiAdapter: ApiAdapter = {
         currentStepLabel:
           session.status === 'COMPLETED'
             ? 'Report ready'
-            : stages[Math.min(cursor, stages.length - 1)]?.title ?? 'Preparing',
+            : (stages[Math.min(cursor, stages.length - 1)]?.title ??
+              'Preparing'),
         stages: stages.map((stage, index) => ({
           ...stage,
           status: phaseStatus(cursor, index),
@@ -448,7 +506,7 @@ export const mockApiAdapter: ApiAdapter = {
       const user = resolveCurrentUser()
       return {
         ...user,
-        bio: 'Owns the decision analysis workflow, scenario framing, and report quality gate.',
+        bio: 'This browser keeps your analysis history and preferences together in one workspace.',
         timezone: 'Asia/Shanghai',
         preferences: db.settings,
         history: db.sessions.map(sessionSummary).slice(0, 6),
@@ -480,7 +538,9 @@ export const mockApiAdapter: ApiAdapter = {
     },
     async markRead(notificationId) {
       await wait(80)
-      const notification = db.notifications.find((candidate) => candidate.id === notificationId)
+      const notification = db.notifications.find(
+        (candidate) => candidate.id === notificationId,
+      )
       if (notification) {
         notification.read = true
       }
@@ -521,7 +581,11 @@ export const mockApiAdapter: ApiAdapter = {
           mode: toDebugMode(session.mode),
           problemStatement: session.problemStatement,
           status: session.status,
-          eventCount: session.answers.length + session.searchTasks.length + session.evidence.length + 1,
+          eventCount:
+            session.answers.length +
+            session.searchTasks.length +
+            session.evidence.length +
+            1,
           answerCount: session.answers.length,
           evidenceCount: session.evidence.length,
           searchTaskCount: session.searchTasks.length,
@@ -540,7 +604,11 @@ export const mockApiAdapter: ApiAdapter = {
           mode: toDebugMode(session.mode),
           problemStatement: session.problemStatement,
           status: session.status,
-          eventCount: session.answers.length + session.searchTasks.length + session.evidence.length + 1,
+          eventCount:
+            session.answers.length +
+            session.searchTasks.length +
+            session.evidence.length +
+            1,
           answerCount: session.answers.length,
           evidenceCount: session.evidence.length,
           searchTaskCount: session.searchTasks.length,
@@ -558,7 +626,8 @@ export const mockApiAdapter: ApiAdapter = {
           follow_up_rounds_used: session.followUpRoundsUsed ?? 0,
           follow_up_extensions_used: session.followUpExtensionsUsed ?? 0,
           follow_up_budget_exhausted: session.followUpBudgetExhausted ?? false,
-          deferred_follow_up_question_count: session.deferredFollowUpQuestionCount ?? 0,
+          deferred_follow_up_question_count:
+            session.deferredFollowUpQuestionCount ?? 0,
           activity_status:
             session.status === 'COMPLETED'
               ? 'completed'
@@ -585,11 +654,16 @@ export const mockApiAdapter: ApiAdapter = {
             allow_custom_input: question.allowCustomInput,
             allow_skip: question.allowSkip,
             priority: question.priority,
-            answered: session.answers.some((answer) => answer.questionId === question.id),
+            answered: session.answers.some(
+              (answer) => answer.questionId === question.id,
+            ),
           })),
           answers: session.answers.map((answer) => ({
             question_id: answer.questionId,
-            value: answer.customInput ?? answer.selectedOptions?.join(', ') ?? String(answer.numericValue ?? answer.answerStatus),
+            value:
+              answer.customInput ??
+              answer.selectedOptions?.join(', ') ??
+              String(answer.numericValue ?? answer.answerStatus),
             source: 'mock-frontend',
             answered_at: session.updatedAt,
           })),
@@ -696,7 +770,9 @@ export const mockApiAdapter: ApiAdapter = {
     },
     async getById(resourceKey, recordId) {
       await wait(100)
-      const record = resourceRecords(resourceKey).find((item) => item.id === recordId)
+      const record = resourceRecords(resourceKey).find(
+        (item) => item.id === recordId,
+      )
       if (!record) {
         throw new Error(`Unknown record ${resourceKey}/${recordId}`)
       }
@@ -730,7 +806,9 @@ export const mockApiAdapter: ApiAdapter = {
         }
       } else {
         const existingCustomRecords = customResources[resourceKey] ?? []
-        const nextRecords = existingCustomRecords.filter((item) => item.id !== savedRecord.id)
+        const nextRecords = existingCustomRecords.filter(
+          (item) => item.id !== savedRecord.id,
+        )
         nextRecords.unshift(savedRecord)
         customResources[resourceKey] = nextRecords
       }

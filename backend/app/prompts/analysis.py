@@ -63,22 +63,53 @@ def build_planning_prompts(session: AnalysisSession) -> tuple[str, str]:
         }
         for item in session.major_conclusions[-8:]
     ]
+    calculations = [
+        {
+            "task_id": item.task_id,
+            "objective": item.objective,
+            "formula_hint": item.formula_hint,
+            "input_params": item.input_params,
+            "unit": item.unit,
+            "result_value": item.result_value,
+            "result_text": item.result_text,
+            "status": item.status,
+        }
+        for item in session.calculation_tasks[-8:]
+    ]
+    chart_tasks = [
+        {
+            "task_id": item.task_id,
+            "objective": item.objective,
+            "chart_type": item.chart_type,
+            "title": item.title,
+            "preferred_unit": item.preferred_unit,
+            "source_task_ids": item.source_task_ids,
+            "status": item.status,
+        }
+        for item in session.chart_tasks[-8:]
+    ]
     system_prompt = (
         "You are the LLM Analysis MCP for a structured multi-round decision-analysis workflow. "
         "For each round, decide whether to ask follow-up questions, plan external search tasks, "
-        "or stop information gathering and move to the final report. "
+        "plan deterministic calculation tasks, plan chart-generation tasks, or stop information gathering "
+        "and move to the final report. "
         "Never repeat answered questions. Avoid asking multiple variations of the same question. "
         "Ask only the minimum number of high-value questions needed to change the recommendation or evidence plan. "
         "If the evidence chain is already sufficient for a bounded recommendation, end the questioning and move to the final report. "
-        "Prefer the minimum next step that materially reduces uncertainty. Separate facts from inference. Return strict JSON only."
+        "Prefer the minimum next step that materially reduces uncertainty. "
+        "Use calculation tasks when the answer depends on deterministic math over known inputs. "
+        "Use chart tasks only when there is enough numeric structure to help the user understand trade-offs. "
+        "Separate facts from inference. Return strict JSON only."
     )
     user_prompt = (
-        "Return JSON with keys: clarification_questions, search_tasks, major_conclusions, "
+        "Return JSON with keys: clarification_questions, search_tasks, calculation_tasks, chart_tasks, major_conclusions, "
         "ready_for_report, reasoning_focus, stop_reason.\n"
         "clarification_questions items must contain question_text, purpose, options, "
         "allow_custom_input, allow_skip, and priority.\n"
         "search_tasks items must contain search_topic, search_goal, search_scope, "
         "suggested_queries, required_fields, and freshness_requirement.\n"
+        "calculation_tasks items must contain objective, formula_hint, input_params, and unit.\n"
+        "chart_tasks items must contain objective, chart_type, title, preferred_unit, source_task_ids, and notes.\n"
         "major_conclusions items must contain content, conclusion_type, basis_refs, and confidence.\n"
         "Rules:\n"
         "1. If critical user-specific constraints are still missing, prefer clarification_questions.\n"
@@ -87,9 +118,11 @@ def build_planning_prompts(session: AnalysisSession) -> tuple[str, str]:
         "2b. Do not restate the same question with slightly different wording, punctuation, or option labels.\n"
         "3. Keep clarification_questions as small as possible and only include questions that would materially change the recommendation, ranking, or evidence plan.\n"
         "4. If user facts are mostly sufficient but external facts need verification, return search_tasks.\n"
-        "5. If the current information is enough for a bounded recommendation, set ready_for_report=true.\n"
-        "6. stop_reason should explain why the loop should pause for user input, run MCP search, or end.\n"
-        "7. reasoning_focus should summarize the single most important uncertainty or decision dimension for this round.\n"
+        "5. If the key uncertainty is numeric and the required inputs are already available, return calculation_tasks.\n"
+        "6. Only return chart_tasks when numeric results already exist or are being produced in the same round.\n"
+        "7. If the current information is enough for a bounded recommendation, set ready_for_report=true.\n"
+        "8. stop_reason should explain why the loop should pause for user input, run MCP tasks, or end.\n"
+        "9. reasoning_focus should summarize the single most important uncertainty or decision dimension for this round.\n"
         f"mode={session.mode.value}\n"
         f"problem_statement={session.problem_statement}\n"
         f"analysis_rounds_completed={session.analysis_rounds_completed}\n"
@@ -101,6 +134,10 @@ def build_planning_prompts(session: AnalysisSession) -> tuple[str, str]:
         + json.dumps(answered_questions, ensure_ascii=False)
         + "\nexisting_evidence_json="
         + json.dumps(evidence_items, ensure_ascii=False)
+        + "\nexisting_calculations_json="
+        + json.dumps(calculations, ensure_ascii=False)
+        + "\nexisting_chart_tasks_json="
+        + json.dumps(chart_tasks, ensure_ascii=False)
         + "\nexisting_major_conclusions_json="
         + json.dumps(conclusions, ensure_ascii=False)
     )
@@ -126,6 +163,26 @@ def build_reporting_prompts(session: AnalysisSession) -> tuple[str, str]:
         }
         for item in session.major_conclusions
     ]
+    calculations = [
+        {
+            "objective": item.objective,
+            "formula_hint": item.formula_hint,
+            "unit": item.unit,
+            "result_value": item.result_value,
+            "result_text": item.result_text,
+            "status": item.status,
+        }
+        for item in session.calculation_tasks
+    ]
+    charts = [
+        {
+            "chart_type": item.chart_type,
+            "title": item.title,
+            "spec": item.spec,
+            "notes": item.notes,
+        }
+        for item in session.chart_artifacts
+    ]
     system_prompt = (
         "You are the final-report writer inside the LLM Analysis MCP. "
         "You receive a clean context distilled from prior rounds instead of raw chat history. "
@@ -133,6 +190,7 @@ def build_reporting_prompts(session: AnalysisSession) -> tuple[str, str]:
         "Prioritize decision value over generic summaries. "
         "Clearly distinguish assumptions, facts, inferences, trade-offs, and recommendations. "
         "The recommendation should be specific, defensible, and useful even under uncertainty. "
+        "When calculation results exist, use them as deterministic anchors in the explanation. "
         "Do not surface open questions in the final markdown; keep the final report focused on decision support. "
         "Return strict JSON only."
     )
@@ -153,5 +211,9 @@ def build_reporting_prompts(session: AnalysisSession) -> tuple[str, str]:
         + json.dumps(conclusions, ensure_ascii=False)
         + "\nevidence_json="
         + json.dumps(evidence_items, ensure_ascii=False)
+        + "\ncalculations_json="
+        + json.dumps(calculations, ensure_ascii=False)
+        + "\ncharts_json="
+        + json.dumps(charts, ensure_ascii=False)
     )
     return system_prompt, user_prompt

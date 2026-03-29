@@ -1,5 +1,6 @@
 import { apiClient } from '@/lib/api/client'
 import type { ApiAdapter } from '@/lib/api/adapters/base'
+import { clearBrowserAccount } from '@/lib/auth/browser-account'
 import {
   COOKIE_SESSION_TOKEN,
   type BackendAuditLogEntry,
@@ -40,23 +41,33 @@ function toBackendMode(mode: AnalysisMode) {
 
 async function getBootstrap(force = false) {
   if (force || !bootstrapPromise) {
-    bootstrapPromise = apiClient.request<BackendBootstrapResponse>(endpoints.backend.bootstrap)
+    bootstrapPromise = apiClient.request<BackendBootstrapResponse>(
+      endpoints.backend.bootstrap,
+    )
   }
 
   return bootstrapPromise
 }
 
 async function fetchBackendSession(sessionId: string) {
-  return apiClient.request<BackendSession>(endpoints.backend.sessionDetail(sessionId))
+  return apiClient.request<BackendSession>(
+    endpoints.backend.sessionDetail(sessionId),
+  )
 }
 
-async function advanceBackendSession(sessionId: string, answers: BackendUserAnswer[] = []) {
-  return apiClient.request<BackendSessionStepResponse>(endpoints.backend.sessionStep(sessionId), {
-    method: 'POST',
-    body: JSON.stringify({
-      answers,
-    }),
-  })
+async function advanceBackendSession(
+  sessionId: string,
+  answers: BackendUserAnswer[] = [],
+) {
+  return apiClient.request<BackendSessionStepResponse>(
+    endpoints.backend.sessionStep(sessionId),
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        answers,
+      }),
+    },
+  )
 }
 
 function paginate<T>(items: T[], meta?: RequestMeta): PaginatedResponse<T> {
@@ -82,12 +93,30 @@ function matchQuery(text: string, q?: string) {
 }
 
 function sessionToSummary(session: AnalysisSession) {
-  const { id, mode, problemStatement, status, createdAt, updatedAt, lastInsight } = session
-  return { id, mode, problemStatement, status, createdAt, updatedAt, lastInsight }
+  const {
+    id,
+    mode,
+    problemStatement,
+    status,
+    createdAt,
+    updatedAt,
+    lastInsight,
+  } = session
+  return {
+    id,
+    mode,
+    problemStatement,
+    status,
+    createdAt,
+    updatedAt,
+    lastInsight,
+  }
 }
 
 async function listKnownBackendSessions() {
-  const sessions = await apiClient.request<BackendSession[]>(endpoints.backend.mySessions)
+  const sessions = await apiClient.request<BackendSession[]>(
+    endpoints.backend.mySessions,
+  )
   return sessions.map(mapBackendSession)
 }
 
@@ -99,8 +128,12 @@ async function buildDashboardOverview() {
     return fallback
   }
 
-  const completed = liveSessions.filter((session) => session.status === 'COMPLETED').length
-  const clarifying = liveSessions.filter((session) => session.status === 'CLARIFYING').length
+  const completed = liveSessions.filter(
+    (session) => session.status === 'COMPLETED',
+  ).length
+  const clarifying = liveSessions.filter(
+    (session) => session.status === 'CLARIFYING',
+  ).length
 
   const overview: DashboardOverview = {
     ...fallback,
@@ -110,7 +143,8 @@ async function buildDashboardOverview() {
         label: 'Tracked backend sessions',
         value: String(liveSessions.length),
         change: `+${Math.max(1, completed)}`,
-        detail: 'Sessions created from the real FastAPI backend in this browser.',
+        detail:
+          'Sessions created from the real FastAPI backend in this browser.',
       },
       {
         id: 'backend-completed',
@@ -133,7 +167,8 @@ async function buildDashboardOverview() {
       {
         id: 'backend-sync',
         title: 'Backend contract synced',
-        detail: 'Anonymous cookie-based sessions are now wired to the FastAPI backend.',
+        detail:
+          'Anonymous cookie-based sessions are now wired to the FastAPI backend.',
         createdAt: new Date().toISOString(),
         tone: 'positive',
       },
@@ -177,6 +212,7 @@ export const restApiAdapter: ApiAdapter = {
     },
     async logout() {
       bootstrapPromise = null
+      clearBrowserAccount()
       await apiClient.request<void>(endpoints.backend.logout, {
         method: 'POST',
       })
@@ -187,9 +223,14 @@ export const restApiAdapter: ApiAdapter = {
     },
     async deletePersonalData() {
       bootstrapPromise = null
-      const payload = await apiClient.request<BackendPersonalDataDeletionResponse>(endpoints.backend.deleteMyData, {
-        method: 'DELETE',
-      })
+      clearBrowserAccount()
+      const payload =
+        await apiClient.request<BackendPersonalDataDeletionResponse>(
+          endpoints.backend.deleteMyData,
+          {
+            method: 'DELETE',
+          },
+        )
       return {
         deletedSessionCount: payload.deleted_session_count,
       }
@@ -210,18 +251,24 @@ export const restApiAdapter: ApiAdapter = {
     async list(meta) {
       const liveSessions = await listKnownBackendSessions()
       const filtered = liveSessions.filter((session) =>
-        matchQuery(`${session.problemStatement} ${session.lastInsight}`, meta?.q),
+        matchQuery(
+          `${session.problemStatement} ${session.lastInsight}`,
+          meta?.q,
+        ),
       )
       return paginate(filtered, meta)
     },
     async create(payload) {
-      const step = await apiClient.request<BackendSessionStepResponse>(endpoints.backend.sessions, {
-        method: 'POST',
-        body: JSON.stringify({
-          mode: toBackendMode(payload.mode),
-          problem_statement: payload.problemStatement,
-        }),
-      })
+      const step = await apiClient.request<BackendSessionStepResponse>(
+        endpoints.backend.sessions,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            mode: toBackendMode(payload.mode),
+            problem_statement: payload.problemStatement,
+          }),
+        },
+      )
 
       return mapBackendSession(await fetchBackendSession(step.session_id))
     },
@@ -229,29 +276,37 @@ export const restApiAdapter: ApiAdapter = {
       return mapBackendSession(await fetchBackendSession(sessionId))
     },
     async submitAnswers(sessionId, payload) {
-      await apiClient.request<BackendSessionStepResponse>(endpoints.backend.sessionStep(sessionId), {
-        method: 'POST',
-        body: JSON.stringify({
-          answers: toBackendAnswers(payload.answers),
-        }),
-      })
+      await apiClient.request<BackendSessionStepResponse>(
+        endpoints.backend.sessionStep(sessionId),
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            answers: toBackendAnswers(payload.answers),
+          }),
+        },
+      )
 
       return mapBackendSession(await fetchBackendSession(sessionId))
     },
     async requestMoreFollowUp(sessionId) {
-      const payload = await apiClient.request<BackendRequestMoreFollowUpResponse>(
-        endpoints.backend.sessionRequestMoreFollowUp(sessionId),
-        {
-          method: 'POST',
-        },
-      )
+      const payload =
+        await apiClient.request<BackendRequestMoreFollowUpResponse>(
+          endpoints.backend.sessionRequestMoreFollowUp(sessionId),
+          {
+            method: 'POST',
+          },
+        )
 
       return mapBackendSession(payload.session)
     },
     async getProgress(sessionId) {
       let session = await fetchBackendSession(sessionId)
 
-      if (session.status === 'ANALYZING' || session.status === 'READY_FOR_REPORT' || session.status === 'REPORTING') {
+      if (
+        session.status === 'ANALYZING' ||
+        session.status === 'READY_FOR_REPORT' ||
+        session.status === 'REPORTING'
+      ) {
         const step = await advanceBackendSession(sessionId)
         session = await fetchBackendSession(sessionId)
         return mapBackendProgress(session, step)
@@ -271,11 +326,13 @@ export const restApiAdapter: ApiAdapter = {
   profile: {
     async get() {
       const settings = await mockApiAdapter.settings.get()
-      const history = (await listKnownBackendSessions()).slice(0, 6).map(sessionToSummary)
+      const history = (await listKnownBackendSessions())
+        .slice(0, 6)
+        .map(sessionToSummary)
 
       return {
         ...createBackendPseudoUser(),
-        bio: 'Connected to the FastAPI backend through anonymous cookie sessions. No backend API key is required by the current server implementation.',
+        bio: 'This browser account is created automatically and keeps your analysis history in sync.',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         preferences: settings,
         history,
@@ -294,24 +351,37 @@ export const restApiAdapter: ApiAdapter = {
   },
   logs: {
     async list(meta) {
-      const payload = await apiClient.request<BackendAuditLogListResponse>(endpoints.backend.debugLogs)
+      const payload = await apiClient.request<BackendAuditLogListResponse>(
+        endpoints.backend.debugLogs,
+      )
       const filtered = payload.logs
         .map(mapAuditLogEntry)
-        .filter((log) => matchQuery(`${log.action} ${log.summary} ${log.target} ${log.actor}`, meta?.q))
+        .filter((log) =>
+          matchQuery(
+            `${log.action} ${log.summary} ${log.target} ${log.actor}`,
+            meta?.q,
+          ),
+        )
       return paginate(filtered, meta)
     },
     async getById(logId) {
-      const payload = await apiClient.request<BackendAuditLogEntry>(endpoints.backend.debugLogDetail(logId))
+      const payload = await apiClient.request<BackendAuditLogEntry>(
+        endpoints.backend.debugLogDetail(logId),
+      )
       return mapAuditLogEntry(payload)
     },
   },
   debug: {
     async listSessions() {
-      const payload = await apiClient.request<BackendDebugSessionListResponse>(endpoints.backend.debugSessions)
+      const payload = await apiClient.request<BackendDebugSessionListResponse>(
+        endpoints.backend.debugSessions,
+      )
       return payload.sessions.map(mapDebugSessionSummary)
     },
     async getSession(sessionId) {
-      const session = await apiClient.request<BackendSession>(endpoints.backend.debugSessionDetail(sessionId))
+      const session = await apiClient.request<BackendSession>(
+        endpoints.backend.debugSessionDetail(sessionId),
+      )
       return {
         summary: mapDebugSessionSummary({
           session_id: session.session_id,
@@ -343,7 +413,11 @@ export const restApiAdapter: ApiAdapter = {
       }
 
       const reports = await Promise.all(
-        liveSessions.slice(0, 3).map(async (session) => restApiAdapter.analysis.getReport(session.id)),
+        liveSessions
+          .slice(0, 3)
+          .map(async (session) =>
+            restApiAdapter.analysis.getReport(session.id),
+          ),
       )
 
       return {
@@ -369,23 +443,24 @@ export const restApiAdapter: ApiAdapter = {
     },
     async getById(resourceKey, recordId) {
       if (resourceKey === 'analyses') {
-        return backendSessionToResourceRecord(await restApiAdapter.analysis.getById(recordId))
+        return backendSessionToResourceRecord(
+          await restApiAdapter.analysis.getById(recordId),
+        )
       }
 
       return mockApiAdapter.resources.getById(resourceKey, recordId)
     },
     async save(resourceKey, record) {
       if (resourceKey === 'analyses') {
-        const liveRecord: ResourceRecord =
-          record.id
-            ? await restApiAdapter.resources.getById(resourceKey, record.id)
-            : {
-                id: `analysis-${Date.now()}`,
-                title: String(record.title ?? 'Backend analysis'),
-                subtitle: String(record.subtitle ?? 'Read only'),
-                status: 'read-only',
-                updatedAt: new Date().toISOString(),
-              }
+        const liveRecord: ResourceRecord = record.id
+          ? await restApiAdapter.resources.getById(resourceKey, record.id)
+          : {
+              id: `analysis-${Date.now()}`,
+              title: String(record.title ?? 'Backend analysis'),
+              subtitle: String(record.subtitle ?? 'Read only'),
+              status: 'read-only',
+              updatedAt: new Date().toISOString(),
+            }
 
         return liveRecord
       }

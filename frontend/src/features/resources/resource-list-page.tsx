@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { type ColumnDef } from '@tanstack/table-core'
@@ -22,60 +21,94 @@ export function ResourceListPage() {
   const adapter = useApiAdapter()
   const definition = getResourceDefinition(resourceKey)
   const isZh = i18n.language.startsWith('zh')
+  const isHistoryPage = resourceKey === 'analyses'
 
   const recordsQuery = useQuery({
     queryKey: ['resources', resourceKey],
-    queryFn: () => adapter.resources.list(resourceKey, { page: 1, pageSize: 20 }),
+    queryFn: () =>
+      adapter.resources.list(resourceKey, { page: 1, pageSize: 20 }),
     enabled: Boolean(definition),
   })
 
   const text = {
     actions: isZh ? '操作' : 'Actions',
-    open: isZh ? '打开' : 'Open',
+    open: isZh ? '查看' : 'View',
     edit: isZh ? '编辑' : 'Edit',
     unknownTitle: isZh ? '未知资源' : 'Unknown resource',
-    unknownDescription:
-      isZh ? '这个资源键还没有注册，请先加入资源注册表后再启用通用 CRUD 页面。' : 'This resource key is not registered yet. Add it to the resource registry to enable generated CRUD surfaces.',
-    eyebrow: isZh ? '注册表' : 'Registry',
+    unknownDescription: isZh
+      ? '这个页面暂时不可用。'
+      : 'This page is not available right now.',
+    eyebrow: isHistoryPage
+      ? isZh
+        ? '历史记录'
+        : 'History'
+      : isZh
+        ? '记录列表'
+        : 'Records',
     createRecord: isZh ? '新建记录' : 'Create record',
+    viewResult: isZh ? '查看结果' : 'View result',
+    continueAnalysis: isZh ? '继续分析' : 'Continue',
   }
 
   const getOpenPath = (record: ResourceRecord) =>
-    resourceKey === 'analyses' ? `/analysis/session/${record.id}` : `/resources/${resourceKey}/${record.id}`
+    resourceKey === 'analyses'
+      ? record.status === 'COMPLETED'
+        ? `/analysis/session/${record.id}/report`
+        : `/analysis/session/${record.id}/clarify`
+      : `/resources/${resourceKey}/${record.id}`
 
-  const columns = useMemo<ColumnDef<ResourceRecord>[]>(() => {
-    if (!definition) {
-      return []
-    }
-
-    return [
-      ...definition.columns.map((column) => ({
-        header: column.label,
-        accessorKey: column.id,
-        cell: ({ row }: { row: { original: ResourceRecord } }) =>
-          column.id === 'updatedAt'
-            ? formatDateTime(String(row.original.updatedAt), locale)
-            : String(row.original[column.id] ?? ''),
-      })),
-      {
-        header: text.actions,
-        id: 'actions',
-        cell: ({ row }: { row: { original: ResourceRecord } }) => (
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => void navigate(getOpenPath(row.original))}>
-              {text.open}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => void navigate(`/resources/${resourceKey}/${row.original.id}/edit`)}>
-              {text.edit}
-            </Button>
-          </div>
-        ),
-      },
-    ]
-  }, [definition, locale, navigate, resourceKey, text.actions, text.edit, text.open])
+  const columns: ColumnDef<ResourceRecord>[] = definition
+    ? [
+        ...definition.columns.map((column) => ({
+          header: column.label,
+          accessorKey: column.id,
+          cell: ({ row }: { row: { original: ResourceRecord } }) =>
+            column.id === 'updatedAt'
+              ? formatDateTime(String(row.original.updatedAt), locale)
+              : String(row.original[column.id] ?? ''),
+        })),
+        {
+          header: text.actions,
+          id: 'actions',
+          cell: ({ row }: { row: { original: ResourceRecord } }) => (
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void navigate(getOpenPath(row.original))}
+              >
+                {isHistoryPage && row.original.status === 'COMPLETED'
+                  ? text.viewResult
+                  : isHistoryPage
+                    ? text.continueAnalysis
+                    : text.open}
+              </Button>
+              {!isHistoryPage ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    void navigate(
+                      `/resources/${resourceKey}/${row.original.id}/edit`,
+                    )
+                  }
+                >
+                  {text.edit}
+                </Button>
+              ) : null}
+            </div>
+          ),
+        },
+      ]
+    : []
 
   if (!definition) {
-    return <EmptyState title={text.unknownTitle} description={text.unknownDescription} />
+    return (
+      <EmptyState
+        title={text.unknownTitle}
+        description={text.unknownDescription}
+      />
+    )
   }
 
   return (
@@ -85,9 +118,13 @@ export function ResourceListPage() {
         title={definition.title}
         description={definition.description}
         actions={
-          <Button onClick={() => void navigate(`/resources/${resourceKey}/new`)}>
-            {text.createRecord}
-          </Button>
+          !isHistoryPage ? (
+            <Button
+              onClick={() => void navigate(`/resources/${resourceKey}/new`)}
+            >
+              {text.createRecord}
+            </Button>
+          ) : undefined
         }
       />
       <DataTable data={recordsQuery.data?.items ?? []} columns={columns} />

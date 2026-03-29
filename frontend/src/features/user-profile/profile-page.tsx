@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/table-core'
-import { Download, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
@@ -9,13 +9,12 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
 import { useApiAdapter } from '@/lib/api/use-api-adapter'
-import { exportToCsv } from '@/lib/export/csv'
 import { useAppStore } from '@/lib/store/app-store'
 import { formatDateTime } from '@/lib/utils/format'
-import type { AnalysisSessionSummary } from '@/types'
+import type { AnalysisSession, AnalysisSessionSummary } from '@/types'
 
 export function ProfilePage() {
-  const { i18n, t } = useTranslation()
+  const { i18n } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const adapter = useApiAdapter()
@@ -28,6 +27,11 @@ export function ProfilePage() {
     queryFn: adapter.profile.get,
   })
 
+  const sessionStatsQuery = useQuery({
+    queryKey: ['analysis', 'profile-stats'],
+    queryFn: () => adapter.analysis.list({ page: 1, pageSize: 200 }),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: () => adapter.auth.deletePersonalData(),
     onSuccess: async () => {
@@ -38,10 +42,22 @@ export function ProfilePage() {
   })
 
   const profile = profileQuery.data
+  const sessionItems = sessionStatsQuery.data?.items ?? []
+  const metricsSource: Array<AnalysisSession | AnalysisSessionSummary> =
+    sessionItems.length > 0 ? sessionItems : (profile?.history ?? [])
+  const conversationCount = sessionStatsQuery.data?.total ?? profile?.history.length ?? 0
+  const thinkingRoundsCount = metricsSource.reduce((total, session) => {
+    const followUpRoundsUsed =
+      'followUpRoundsUsed' in session ? (session.followUpRoundsUsed ?? 0) : 0
+    return total + Math.max(1, followUpRoundsUsed + 1)
+  }, 0)
 
   const text = {
     eyebrow: isZh ? '账户' : 'Account',
-    exportHistory: isZh ? '导出历史' : 'Export history',
+    title: isZh ? '个人资料' : 'Profile',
+    subtitle: isZh
+      ? '查看当前浏览器账号信息与历史分析记录。'
+      : 'View this browser account and its analysis history.',
     problem: isZh ? '问题' : 'Problem',
     mode: isZh ? '模式' : 'Mode',
     status: isZh ? '状态' : 'Status',
@@ -50,30 +66,25 @@ export function ProfilePage() {
     timezone: isZh ? '时区' : 'Timezone',
     roles: isZh ? '角色' : 'Roles',
     lastActive: isZh ? '最近活跃' : 'Last active',
-    preferencesTitle: isZh ? '偏好快照' : 'Preference snapshot',
-    preferencesDescription: isZh
-      ? '这里显示的是整个工作台当前正在使用的持久化偏好设置。'
-      : 'Profile export reflects the same persisted settings used across the entire workspace shell.',
+    statsTitle: isZh ? '分析概览' : 'Analysis Summary',
+    statsDescription: isZh
+      ? '基于当前浏览器下已保存的分析会话统计。'
+      : 'A quick summary based on the saved analysis sessions in this browser.',
+    conversations: isZh ? '已进行对话' : 'Conversations',
+    thinkingRounds: isZh ? '思考轮次' : 'Thinking rounds',
     dangerTitle: isZh ? '危险操作' : 'Danger zone',
     dangerDescription: isZh
       ? '执行后会同时清除当前浏览器 cookie，并删除该 cookie 归属下的全部个人会话与相关数据。'
       : 'This clears the current browser cookie and permanently removes all personal sessions and related data tied to it.',
-    clearData: isZh ? '清除 cookie 并删除个人数据' : 'Clear cookie and delete personal data',
-    clearDataPending: isZh ? '正在清除 cookie 和数据...' : 'Clearing cookie and data...',
+    clearData: isZh
+      ? '清除 cookie 并删除个人数据'
+      : 'Clear cookie and delete personal data',
+    clearDataPending: isZh
+      ? '正在清除 cookie 和数据...'
+      : 'Clearing cookie and data...',
     clearDataConfirm: isZh
       ? '确认清除当前 cookie，并删除该身份下的个人资料、会话历史和相关数据吗？此操作不可撤销。'
       : 'Are you sure you want to clear the current cookie and delete the profile, session history, and related data tied to it? This cannot be undone.',
-  }
-
-  const preferenceLabel: Record<string, string> = {
-    themeMode: isZh ? '主题模式' : 'Theme mode',
-    language: isZh ? '语言' : 'Language',
-    apiMode: isZh ? '接口模式' : 'API mode',
-    displayDensity: isZh ? '信息密度' : 'Display density',
-    notificationsEmail: isZh ? '邮件通知' : 'Email notifications',
-    notificationsPush: isZh ? '推送通知' : 'Push notifications',
-    autoExportPdf: isZh ? '自动导出 PDF' : 'Auto PDF export',
-    chartMotion: isZh ? '图表动效' : 'Chart motion',
   }
 
   const historyColumns: ColumnDef<AnalysisSessionSummary>[] = [
@@ -99,63 +110,70 @@ export function ProfilePage() {
     <div className="space-y-6">
       <PageHeader
         eyebrow={text.eyebrow}
-        title={t('profile.title')}
-        description={t('profile.subtitle')}
-        actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              if (!profile) {
-                return
-              }
-
-              void exportToCsv({
-                title: 'profile-history',
-                headers: [text.problem, text.mode, text.status, text.updated],
-                rows: profile.history.map((item) => [item.problemStatement, item.mode, item.status, item.updatedAt]),
-              })
-            }}
-          >
-            <Download className="size-4" />
-            {text.exportHistory}
-          </Button>
-        }
+        title={text.title}
+        description={text.subtitle}
       />
 
       {profile ? (
         <>
-          <div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
             <Card className="space-y-4 p-6">
               <div
                 className="size-20 rounded-full bg-cover bg-center bg-no-repeat"
-                style={{ backgroundColor: 'var(--gold-primary)', backgroundImage: 'var(--gradient-gold)' }}
+                style={{
+                  backgroundColor: 'var(--gold-primary)',
+                  backgroundImage: 'var(--gradient-gold)',
+                }}
               />
               <div>
-                <h2 className="text-2xl font-semibold text-text-primary">{profile.name}</h2>
-                <p className="text-sm text-text-secondary">{profile.title}</p>
+                <h2 className="text-text-primary text-2xl font-semibold">
+                  {profile.name}
+                </h2>
+                <p className="text-text-secondary text-sm">{profile.title}</p>
               </div>
-              <p className="text-sm leading-6 text-text-secondary">{profile.bio}</p>
-              <div className="grid gap-2 text-sm text-text-secondary">
-                <p>{text.email}: {profile.email}</p>
-                <p>{text.timezone}: {profile.timezone}</p>
-                <p>{text.roles}: {profile.roles.join(', ')}</p>
-                <p>{text.lastActive}: {formatDateTime(profile.lastActiveAt, locale)}</p>
+              <p className="text-text-secondary text-sm leading-6">
+                {profile.bio}
+              </p>
+              <div className="text-text-secondary grid gap-2 text-sm">
+                <p>
+                  {text.email}: {profile.email}
+                </p>
+                <p>
+                  {text.timezone}: {profile.timezone}
+                </p>
+                <p>
+                  {text.roles}: {profile.roles.join(', ')}
+                </p>
+                <p>
+                  {text.lastActive}: {formatDateTime(profile.lastActiveAt, locale)}
+                </p>
               </div>
             </Card>
 
-            <Card className="space-y-4 p-6">
-              <div>
-                <h2 className="text-lg font-semibold text-text-primary">{text.preferencesTitle}</h2>
-                <p className="mt-1 text-sm leading-7 text-text-secondary">{text.preferencesDescription}</p>
+            <Card className="flex flex-col justify-between gap-5 p-6">
+              <div className="space-y-2">
+                <p className="text-gold-primary text-xs font-semibold tracking-[0.18em] uppercase">
+                  {text.statsTitle}
+                </p>
+                <p className="text-text-secondary text-sm leading-6">
+                  {text.statsDescription}
+                </p>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                {Object.entries(profile.preferences).map(([key, value]) => (
-                  <div key={key} className="rounded-[20px] border border-border-subtle bg-app-bg-elevated p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-text-muted">{preferenceLabel[key] ?? key}</p>
-                    <p className="mt-2 text-sm font-medium text-text-primary">{String(value)}</p>
-                  </div>
-                ))}
+              <div className="grid gap-3">
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[rgba(212,175,55,0.08)] p-4">
+                  <p className="text-text-secondary text-xs">{text.conversations}</p>
+                  <p className="text-text-primary mt-2 text-3xl font-semibold">
+                    {conversationCount}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[rgba(212,175,55,0.08)] p-4">
+                  <p className="text-text-secondary text-xs">{text.thinkingRounds}</p>
+                  <p className="text-text-primary mt-2 text-3xl font-semibold">
+                    {thinkingRoundsCount}
+                  </p>
+                </div>
               </div>
             </Card>
           </div>
@@ -166,8 +184,12 @@ export function ProfilePage() {
                 <TriangleAlert className="size-5" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-lg font-semibold text-text-primary">{text.dangerTitle}</h2>
-                <p className="text-sm leading-7 text-text-secondary">{text.dangerDescription}</p>
+                <h2 className="text-text-primary text-lg font-semibold">
+                  {text.dangerTitle}
+                </h2>
+                <p className="text-text-secondary text-sm leading-7">
+                  {text.dangerDescription}
+                </p>
               </div>
             </div>
 
@@ -189,7 +211,9 @@ export function ProfilePage() {
                   void deleteMutation.mutateAsync()
                 }}
               >
-                {deleteMutation.isPending ? text.clearDataPending : text.clearData}
+                {deleteMutation.isPending
+                  ? text.clearDataPending
+                  : text.clearData}
               </Button>
             </div>
           </Card>
