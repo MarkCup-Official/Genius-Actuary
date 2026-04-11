@@ -45,3 +45,7 @@ Then open [http://localhost:5173](http://localhost:5173).
 - Backend audit logs and session debug views now live behind a separate protected debug web route at `/debug/login`.
 - Product rule: every clarification question must support custom user input. Preset options are only shortcuts and must never block free-form answers in the frontend, adapter mappings, mock data, or backend contracts.
 - See [`frontend/README.md`](frontend/README.md) for the full frontend architecture and environment setup.
+
+## Stone Badge
+
+![Stone Badge](https://stone.professorlee.work/api/stone/MarkCup-Official/Genius-Actuary)
